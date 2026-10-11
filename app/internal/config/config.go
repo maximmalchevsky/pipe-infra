@@ -1,3 +1,4 @@
+// Package config manages environment configuration parsing for the API and worker services.
 package config
 
 import (

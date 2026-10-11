@@ -1,3 +1,4 @@
+// Package main provides the entrypoint for the notifier-worker background processor.
 package main
 
 import (
@@ -70,7 +71,7 @@ func main() {
 
 	// Health and metrics HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

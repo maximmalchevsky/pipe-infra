@@ -1,3 +1,4 @@
+// Package worker executes the background message claiming and simulated dispatch loop.
 package worker
 
 import (

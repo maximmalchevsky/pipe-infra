@@ -1,3 +1,4 @@
+// Package main provides the entrypoint for the notifier-api service.
 package main
 
 import (

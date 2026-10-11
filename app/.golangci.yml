@@ -20,3 +20,7 @@ linters:
           - gosec
         text: "G404"
         path: "(fault|loadgen)"
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

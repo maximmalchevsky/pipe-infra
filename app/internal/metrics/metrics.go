@@ -1,3 +1,4 @@
+// Package metrics defines and registers Prometheus metrics for API and worker services.
 package metrics
 
 import (

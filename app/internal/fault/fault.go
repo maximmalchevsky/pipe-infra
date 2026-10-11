@@ -1,3 +1,4 @@
+// Package fault provides fault injection middleware for simulating latency and errors.
 package fault
 
 import (

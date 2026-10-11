@@ -1,3 +1,4 @@
+// Package loadgen provides statistics collection and latency calculation for load generation.
 package loadgen
 
 import (

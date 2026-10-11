@@ -1,3 +1,4 @@
+// Package migrate manages database migrations under PostgreSQL advisory locks.
 package migrate
 
 import (
@@ -65,7 +66,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("begin migration tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	if _, err := tx.Exec(ctx, string(content)); err != nil {
 		return fmt.Errorf("execute 001_init.sql: %w", err)

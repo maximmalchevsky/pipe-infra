@@ -1,3 +1,4 @@
+// Package store defines the data access layer and fake implementation for testing.
 package store
 
 import (
@@ -32,15 +33,18 @@ func (f *FakeStore) SetPingErr(err error) {
 	f.pingErr = err
 }
 
-func (f *FakeStore) Ping(ctx context.Context) error {
+// Ping checks if the fake store is healthy.
+func (f *FakeStore) Ping(_ context.Context) error {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.pingErr
 }
 
+// Close closes the fake store resources.
 func (f *FakeStore) Close() {}
 
-func (f *FakeStore) CreateCampaign(ctx context.Context, text string, recipients int) (*Campaign, error) {
+// CreateCampaign adds a campaign and its pending messages to the fake store.
+func (f *FakeStore) CreateCampaign(_ context.Context, text string, recipients int) (*Campaign, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -66,7 +70,8 @@ func (f *FakeStore) CreateCampaign(ctx context.Context, text string, recipients 
 	}, nil
 }
 
-func (f *FakeStore) GetCampaign(ctx context.Context, id int64) (*CampaignDetail, error) {
+// GetCampaign retrieves campaign details by ID from the fake store.
+func (f *FakeStore) GetCampaign(_ context.Context, id int64) (*CampaignDetail, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -78,7 +83,8 @@ func (f *FakeStore) GetCampaign(ctx context.Context, id int64) (*CampaignDetail,
 	return &cp, nil
 }
 
-func (f *FakeStore) ListCampaigns(ctx context.Context, limit int) ([]CampaignDetail, error) {
+// ListCampaigns returns the most recent campaigns up to limit from the fake store.
+func (f *FakeStore) ListCampaigns(_ context.Context, limit int) ([]CampaignDetail, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -95,7 +101,8 @@ func (f *FakeStore) ListCampaigns(ctx context.Context, limit int) ([]CampaignDet
 	return result, nil
 }
 
-func (f *FakeStore) GetPendingCount(ctx context.Context) (int64, error) {
+// GetPendingCount returns the total number of pending messages across all campaigns in the fake store.
+func (f *FakeStore) GetPendingCount(_ context.Context) (int64, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -106,7 +113,8 @@ func (f *FakeStore) GetPendingCount(ctx context.Context) (int64, error) {
 	return total, nil
 }
 
-func (f *FakeStore) WaitForTables(ctx context.Context) error {
+// WaitForTables checks if tables are ready in the fake store.
+func (f *FakeStore) WaitForTables(_ context.Context) error {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	if !f.tablesReady {
@@ -115,6 +123,7 @@ func (f *FakeStore) WaitForTables(ctx context.Context) error {
 	return nil
 }
 
+// ClaimAndProcess claims a batch of messages and executes processFn.
 func (f *FakeStore) ClaimAndProcess(
 	ctx context.Context,
 	batchSize int,
@@ -157,11 +166,12 @@ func (f *FakeStore) ClaimAndProcess(
 				continue
 			}
 			c.Pending--
-			if res.Status == "sent" {
+			switch res.Status {
+			case "sent":
 				c.Sent++
-			} else if res.Status == "failed" {
+			case "failed":
 				c.Failed++
-			} else {
+			default:
 				c.Pending++
 			}
 			break

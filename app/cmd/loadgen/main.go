@@ -1,3 +1,4 @@
+// Package main provides the loadgen CLI tool for generating campaigns and HTTP load.
 package main
 
 import (

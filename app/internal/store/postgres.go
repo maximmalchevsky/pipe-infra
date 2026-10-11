@@ -238,17 +238,18 @@ func (s *PostgresStore) ClaimAndProcess(
 
 	batch := &pgx.Batch{}
 	for _, res := range results {
-		if res.Status == "sent" {
+		switch res.Status {
+		case "sent":
 			batch.Queue(
 				"UPDATE messages SET status = 'sent', sent_at = NOW(), attempts = $1, updated_at = NOW() WHERE id = $2",
 				res.Attempts, res.ID,
 			)
-		} else if res.Status == "failed" {
+		case "failed":
 			batch.Queue(
 				"UPDATE messages SET status = 'failed', attempts = $1, updated_at = NOW() WHERE id = $2",
 				res.Attempts, res.ID,
 			)
-		} else {
+		default:
 			batch.Queue(
 				"UPDATE messages SET status = 'pending', attempts = $1, updated_at = NOW() WHERE id = $2",
 				res.Attempts, res.ID,
