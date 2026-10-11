@@ -7,7 +7,7 @@ api:
   replicas: 2
   faultErrorRate: "0"
   faultLatencyMs: "0"
-  releaseNote: ""
+  releaseNote: "demo-2026-10-11T20:44:19Z"
   resources:
     requests:
       cpu: 50m
