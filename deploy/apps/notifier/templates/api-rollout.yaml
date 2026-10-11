@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: notifier-api
     app.kubernetes.io/part-of: notifier
 spec:
-  replicas: {{ .Values.api.replicas | default 2 }}
+  # replicas omitted: owned by KEDA (ScaledObject notifier-api, min 2 / max 6)
   selector:
     matchLabels:
       app.kubernetes.io/name: notifier-api
