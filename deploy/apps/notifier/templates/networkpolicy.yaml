@@ -118,7 +118,7 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# Egress to ingress-nginx controller HTTPS port
+# Egress to ingress-nginx controller HTTPS port for synthetic traffic generator and load Jobs
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -128,8 +128,10 @@ metadata:
     app.kubernetes.io/part-of: notifier
 spec:
   podSelector:
-    matchLabels:
-      app.kubernetes.io/name: notifier-traffic
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [notifier-traffic, notifier-loadgen]
   policyTypes:
     - Egress
   egress:

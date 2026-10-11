@@ -111,13 +111,13 @@ apps: ## Показать список Application в ArgoCD
 load-campaign: ## Запустить генерацию кампании рассылки через Kubernetes Job (N=50000)
 	@N_VAL=$${N:-50000}; \
 	EPOCH=$$(date +%s); \
-	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-campaign-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen campaign -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -recipients $$N_VAL
+	scripts/loadgen-job.sh loadgen-campaign-$$EPOCH $(IMAGE) campaign -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -recipients $$N_VAL | kubectl --kubeconfig $(KUBECONFIG_LOCAL) create -f -
 
 load-api: ## Запустить нагрузочное HTTP-тестирование API через Kubernetes Job (RPS=300, DURATION=2m)
 	@RPS_VAL=$${RPS:-300}; \
 	DUR_VAL=$${DURATION:-2m}; \
 	EPOCH=$$(date +%s); \
-	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-api-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen http -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -rps $$RPS_VAL -duration $$DUR_VAL
+	scripts/loadgen-job.sh loadgen-api-$$EPOCH $(IMAGE) http -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -rps $$RPS_VAL -duration $$DUR_VAL | kubectl --kubeconfig $(KUBECONFIG_LOCAL) create -f -
 
 demo-canary: ## Запустить canary-релиз notifier-api через values.yaml (api.releaseNote)
 	@TS=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
