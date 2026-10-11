@@ -7,6 +7,7 @@ api:
   replicas: 2
   faultErrorRate: "0"
   faultLatencyMs: "0"
+  releaseNote: ""
   resources:
     requests:
       cpu: 50m
@@ -41,3 +42,6 @@ loadgen:
   http:
     rps: 300
     duration: 2m
+traffic:
+  enabled: true
+  rps: 5

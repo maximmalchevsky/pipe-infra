@@ -110,6 +110,34 @@ data:
               "refId": "A"
             }
           ]
+        },
+        {
+          "id": 8,
+          "title": "Canary vs Stable RPS",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\"}[1m]))",
+              "legendFormat": "{{`{{exported_service}}`}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Canary vs Stable 5xx Ratio",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\",status=~\"5..\"}[1m])) / sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\"}[1m]))",
+              "legendFormat": "{{`{{exported_service}}`}}",
+              "refId": "A"
+            }
+          ]
         }
       ],
       "refresh": "5s",

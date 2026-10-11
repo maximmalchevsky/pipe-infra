@@ -70,11 +70,15 @@ if [ -z "$NOTIFIER_DB_PASSWORD" ]; then
   unset NEW_DB_PASSWORD
 fi
 
+TELEGRAM_BOT_TOKEN="$(get_env_var "TELEGRAM_BOT_TOKEN")"
+
 # Helper function to seal a Kubernetes secret offline
 # Arguments:
 #   $1: namespace
 #   $2: secret name
 #   [--type=<type>]
+#   [--no-namespace|--skip-namespace]
+#   [--label=<key=val>]
 #   $3..: secret key=value pairs
 seal_secret() {
   local namespace="$1"
@@ -82,22 +86,42 @@ seal_secret() {
   shift 2
 
   local secret_type="Opaque"
-  if [[ "$#" -gt 0 && "$1" == --type=* ]]; then
-    secret_type="${1#--type=}"
-    shift
-  fi
+  local skip_namespace=false
+  local labels=()
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --type=*)
+        secret_type="${1#--type=}"
+        shift
+        ;;
+      --skip-namespace|--no-namespace)
+        skip_namespace=true
+        shift
+        ;;
+      --label=*)
+        labels+=( "${1#--label=}" )
+        shift
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
   local ns_dir="${PLATFORM_SECRETS_DIR}/${namespace}"
   mkdir -p "${ns_dir}"
 
-  # Ensure namespace.yaml exists per namespace
-  local ns_file="${ns_dir}/namespace.yaml"
-  cat <<EOF > "${ns_file}"
+  # Ensure namespace.yaml exists per namespace if not skipped and not already present
+  if [ "$skip_namespace" = false ] && [ ! -f "${ns_dir}/namespace.yaml" ]; then
+    local ns_file="${ns_dir}/namespace.yaml"
+    cat <<EOF > "${ns_file}"
 apiVersion: v1
 kind: Namespace
 metadata:
   name: ${namespace}
 EOF
+  fi
 
   local from_literal_args=()
   for item in "$@"; do
@@ -107,18 +131,68 @@ EOF
   done
 
   local sealed_file="${ns_dir}/${secret_name}.sealed.yaml"
-  kubectl create secret generic "${secret_name}" \
-    --namespace "${namespace}" \
-    --type="${secret_type}" \
-    "${from_literal_args[@]}" \
-    --dry-run=client -o yaml | \
-  kubeseal \
-    --cert "${CERT_FILE}" \
-    --format yaml \
-    --controller-name sealed-secrets-controller \
-    --controller-namespace kube-system > "${sealed_file}"
 
-  echo "Generated sealed secret: deploy/platform/secrets/${namespace}/${secret_name}.sealed.yaml"
+  # Idempotency check: if sealed file exists and can be decrypted with recovery key,
+  # avoid regenerating ciphertext if secret data is unchanged.
+  local should_seal=true
+  if [ -f "${sealed_file}" ] && [ -f "${SECRETS_DIR}/sealed-secrets.key" ]; then
+    local desired_json current_json
+    if [ "${#labels[@]}" -gt 0 ]; then
+      desired_json="$(kubectl create secret generic "${secret_name}" \
+        --namespace "${namespace}" \
+        --type="${secret_type}" \
+        "${from_literal_args[@]}" \
+        --dry-run=client -o yaml | \
+        kubectl label --local -f - "${labels[@]}" -o json 2>/dev/null || true)"
+    else
+      desired_json="$(kubectl create secret generic "${secret_name}" \
+        --namespace "${namespace}" \
+        --type="${secret_type}" \
+        "${from_literal_args[@]}" \
+        --dry-run=client -o json 2>/dev/null || true)"
+    fi
+    current_json="$(kubeseal --recovery-unseal --recovery-private-key "${SECRETS_DIR}/sealed-secrets.key" -f "${sealed_file}" -o json 2>/dev/null || true)"
+    if [ -n "$desired_json" ] && [ -n "$current_json" ]; then
+      if python3 -c '
+import sys, json
+d1 = json.loads(sys.argv[1]).get("data", {})
+d2 = json.loads(sys.argv[2]).get("data", {})
+sys.exit(0 if d1 == d2 else 1)
+' "$desired_json" "$current_json" 2>/dev/null; then
+        should_seal=false
+      fi
+    fi
+  fi
+
+  if [ "$should_seal" = true ]; then
+    if [ "${#labels[@]}" -gt 0 ]; then
+      kubectl create secret generic "${secret_name}" \
+        --namespace "${namespace}" \
+        --type="${secret_type}" \
+        "${from_literal_args[@]}" \
+        --dry-run=client -o yaml | \
+      kubectl label --local -f - "${labels[@]}" -o yaml | \
+      kubeseal \
+        --cert "${CERT_FILE}" \
+        --format yaml \
+        --controller-name sealed-secrets-controller \
+        --controller-namespace kube-system > "${sealed_file}"
+    else
+      kubectl create secret generic "${secret_name}" \
+        --namespace "${namespace}" \
+        --type="${secret_type}" \
+        "${from_literal_args[@]}" \
+        --dry-run=client -o yaml | \
+      kubeseal \
+        --cert "${CERT_FILE}" \
+        --format yaml \
+        --controller-name sealed-secrets-controller \
+        --controller-namespace kube-system > "${sealed_file}"
+    fi
+    echo "Generated sealed secret: deploy/platform/secrets/${namespace}/${secret_name}.sealed.yaml"
+  else
+    echo "Sealed secret deploy/platform/secrets/${namespace}/${secret_name}.sealed.yaml is up to date (unchanged)."
+  fi
 }
 
 # ------------------------------------------------------------------------------
@@ -136,5 +210,19 @@ seal_secret "notifier" "notifier-db-credentials" \
   --type="kubernetes.io/basic-auth" \
   "username=notifier" \
   "password=${NOTIFIER_DB_PASSWORD}"
+
+# 3. Telegram secrets (Alertmanager & Argo Rollouts)
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+  seal_secret "monitoring" "alertmanager-telegram" \
+    "bot_token=${TELEGRAM_BOT_TOKEN}"
+
+  seal_secret "argo-rollouts" "argo-rollouts-notification-secret" \
+    --no-namespace \
+    --label="app.kubernetes.io/component=rollouts-controller" \
+    --label="app.kubernetes.io/part-of=argo-rollouts" \
+    "telegram-token=${TELEGRAM_BOT_TOKEN}"
+else
+  echo "Notice: TELEGRAM_BOT_TOKEN is not set in .env; skipping alertmanager-telegram and argo-rollouts-notification-secret"
+fi
 
 echo "All secrets successfully sealed offline."

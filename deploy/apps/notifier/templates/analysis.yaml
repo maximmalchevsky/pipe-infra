@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: notifier-api-health
+  labels:
+    app.kubernetes.io/name: notifier-api
+    app.kubernetes.io/part-of: notifier
+spec:
+  metrics:
+    - name: success-rate
+      interval: 30s
+      failureLimit: 1
+      inconclusiveLimit: 2
+      successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.95
+      failureCondition: len(result) > 0 && !isNaN(result[0]) && result[0] < 0.95
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            sum(rate(nginx_ingress_controller_requests{exported_service="notifier-api-canary",status!~"5.."}[1m]))
+            /
+            sum(rate(nginx_ingress_controller_requests{exported_service="notifier-api-canary"}[1m]))
+    - name: latency-p95
+      interval: 30s
+      failureLimit: 1
+      inconclusiveLimit: 2
+      successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] < 0.5
+      failureCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.5
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_service="notifier-api-canary"}[1m])))

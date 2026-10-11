@@ -1,0 +1,66 @@
+{{- if .Values.traffic.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifier-traffic
+  labels:
+    app.kubernetes.io/name: notifier-traffic
+    app.kubernetes.io/part-of: notifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-traffic
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notifier-traffic
+        app.kubernetes.io/part-of: notifier
+    spec:
+      # Always-on synthetic traffic generator: provides continuous traffic
+      # through ingress to feed canary analysis metrics and Prometheus/Grafana dashboards
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: traffic
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          command:
+            - /usr/local/bin/loadgen
+            - http
+            - -url
+            - https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns
+            - -host
+            - api.{{ .Values.domain }}
+            - -insecure
+            - -rps
+            - {{ .Values.traffic.rps | default 5 | quote }}
+            - -duration
+            - "0"
+            - -workers
+            - "8"
+            - -method
+            - GET
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+{{- end }}

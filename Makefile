@@ -1,9 +1,13 @@
 TF := terraform -chdir=infra/terraform
 KUBECONFIG_LOCAL := .kube/config
 IMAGE ?= $(shell awk '/^image:/{f=1} f && /repository:/{repo=$$2} f && /tag:/{gsub(/"/, "", $$2); tag=$$2; f=0} END{print repo ":" tag}' deploy/apps/notifier/values.yaml)
+DOMAIN ?= $(shell grep -E '^TF_VAR_search_domain=' .env 2>/dev/null | sed -E 's/^TF_VAR_search_domain=["'"'"']?([^"'"'"' ]+).*/\1/' || true)
+ifeq ($(DOMAIN),)
+DOMAIN := hackathon.lan
+endif
 
 .DEFAULT_GOAL := help
-.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal load-campaign load-api load-clean watch
+.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal load-campaign load-api load-clean watch demo-canary demo-rollback demo-fix rollout-status
 
 all: help
 
@@ -107,13 +111,67 @@ apps: ## Показать список Application в ArgoCD
 load-campaign: ## Запустить генерацию кампании рассылки через Kubernetes Job (N=50000)
 	@N_VAL=$${N:-50000}; \
 	EPOCH=$$(date +%s); \
-	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-campaign-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen campaign -url http://notifier-api-stable.notifier.svc/api/v1/campaigns -recipients $$N_VAL
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-campaign-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen campaign -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -recipients $$N_VAL
 
 load-api: ## Запустить нагрузочное HTTP-тестирование API через Kubernetes Job (RPS=300, DURATION=2m)
 	@RPS_VAL=$${RPS:-300}; \
 	DUR_VAL=$${DURATION:-2m}; \
 	EPOCH=$$(date +%s); \
-	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-api-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen http -url http://notifier-api-stable.notifier.svc/api/v1/campaigns -rps $$RPS_VAL -duration $$DUR_VAL
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-api-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen http -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.$(DOMAIN) -insecure -rps $$RPS_VAL -duration $$DUR_VAL
+
+demo-canary: ## Запустить canary-релиз notifier-api через values.yaml (api.releaseNote)
+	@TS=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
+	echo "Выполняется canary-релиз с releaseNote: demo-$$TS..."; \
+	if command -v yq >/dev/null 2>&1; then \
+		yq -i ".api.releaseNote = \"demo-$$TS\"" deploy/apps/notifier/values.yaml; \
+	else \
+		sed -i.bak -E "s/releaseNote: .*/releaseNote: \"demo-$$TS\"/" deploy/apps/notifier/values.yaml && rm -f deploy/apps/notifier/values.yaml.bak; \
+	fi; \
+	git add deploy/apps/notifier/values.yaml && \
+	git commit -m "demo: canary release $$TS" && \
+	git push; \
+	echo ""; \
+	echo "Canary-релиз отправлен в git! Что отслеживать:"; \
+	echo "  1. Статус Rollout: make rollout-status"; \
+	echo "  2. Дашборд Grafana: https://grafana.$(DOMAIN) (панели Canary vs Stable)"; \
+	echo "  3. Прогресс канарейки в ArgoCD: https://argocd.$(DOMAIN)"
+
+demo-rollback: ## Запустить canary-релиз с ошибками (FAULT_ERROR_RATE=0.5) для автоотката
+	@echo "Устанавливается faultErrorRate=0.5 для демонстрации отката..."; \
+	if command -v yq >/dev/null 2>&1; then \
+		yq -i '.api.faultErrorRate = "0.5"' deploy/apps/notifier/values.yaml; \
+	else \
+		sed -i.bak -E 's/faultErrorRate: .*/faultErrorRate: "0.5"/' deploy/apps/notifier/values.yaml && rm -f deploy/apps/notifier/values.yaml.bak; \
+	fi; \
+	git add deploy/apps/notifier/values.yaml && \
+	git commit -m "demo: bad release (50% errors)" && \
+	git push; \
+	echo ""; \
+	echo "Релиз с 50% ошибок отправлен в git!"; \
+	echo "Ожидаемое поведение:"; \
+	echo "  1. Rollout переводит 20% трафика на canary"; \
+	echo "  2. AnalysisTemplate notifier-api-health фиксирует success-rate < 0.95"; \
+	echo "  3. Rollout переходит в статус Degraded/Aborted"; \
+	echo "  4. 100% трафика возвращается на stable (инцидент предотвращен)"; \
+	echo "  Проверить статус: make rollout-status"
+
+demo-fix: ## Сбросить faultErrorRate обратно в 0 и вернуть Rollout в здоровое состояние
+	@echo "Сброс faultErrorRate в 0..."; \
+	if command -v yq >/dev/null 2>&1; then \
+		yq -i '.api.faultErrorRate = "0"' deploy/apps/notifier/values.yaml; \
+	else \
+		sed -i.bak -E 's/faultErrorRate: .*/faultErrorRate: "0"/' deploy/apps/notifier/values.yaml && rm -f deploy/apps/notifier/values.yaml.bak; \
+	fi; \
+	git add deploy/apps/notifier/values.yaml && \
+	git commit -m "demo: fix bad release (0% errors)" && \
+	git push; \
+	echo ""; \
+	echo "Исправление отправлено в git! Rollout успешно выкатит новую версию на 100%."
+
+rollout-status: ## Показать статус Rollout notifier-api и список AnalysisRuns
+	@kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get rollout notifier-api -o wide
+	@echo ""
+	@kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get analysisruns
 
 load-clean: ## Удалить завершенные Kubernetes Jobs генератора нагрузки (loadgen-*)
 	@for j in $$(kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get jobs -o jsonpath='{range .items[?(@.status.succeeded > 0)]}{.metadata.name}{" "}{end}' 2>/dev/null); do \

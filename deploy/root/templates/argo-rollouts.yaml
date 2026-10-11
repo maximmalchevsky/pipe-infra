@@ -29,6 +29,55 @@ spec:
               memory: 64Mi
             limits:
               memory: 256Mi
+        {{- if and .Values.telegram .Values.telegram.enabled }}
+        notifications:
+          secret:
+            create: false
+          notifiers:
+            service.telegram: |
+              token: $telegram-token
+          templates:
+            template.on-rollout-completed: |
+              message: |
+                [OK] Rollout {{`{{ .rollout.metadata.name }}`}} in namespace {{`{{ .rollout.metadata.namespace }}`}} completed successfully.
+                Image: {{`{{ (index .rollout.spec.template.spec.containers 0).image }}`}}
+            template.rollout-completed: |
+              message: |
+                [OK] Rollout {{`{{ .rollout.metadata.name }}`}} in namespace {{`{{ .rollout.metadata.namespace }}`}} completed successfully.
+                Image: {{`{{ (index .rollout.spec.template.spec.containers 0).image }}`}}
+            template.on-rollout-aborted: |
+              message: |
+                [ABORTED] Rollout {{`{{ .rollout.metadata.name }}`}} in namespace {{`{{ .rollout.metadata.namespace }}`}} was aborted!
+                Image: {{`{{ (index .rollout.spec.template.spec.containers 0).image }}`}}
+            template.rollout-aborted: |
+              message: |
+                [ABORTED] Rollout {{`{{ .rollout.metadata.name }}`}} in namespace {{`{{ .rollout.metadata.namespace }}`}} was aborted!
+                Image: {{`{{ (index .rollout.spec.template.spec.containers 0).image }}`}}
+            template.on-analysis-run-failed: |
+              message: |
+                [FAILED] AnalysisRun {{`{{ .analysisrun.metadata.name }}`}} in namespace {{`{{ if .rollout }}{{ .rollout.metadata.namespace }}{{ else }}{{ .analysisrun.metadata.namespace }}{{ end }}`}} failed!
+                Rollout: {{`{{ if .rollout }}{{ .rollout.metadata.name }}{{ else }}N/A{{ end }}`}}
+                Image: {{`{{ if and .rollout .rollout.spec.template.spec.containers }}{{ (index .rollout.spec.template.spec.containers 0).image }}{{ else }}N/A{{ end }}`}}
+            template.analysis-run-failed: |
+              message: |
+                [FAILED] AnalysisRun {{`{{ .analysisrun.metadata.name }}`}} in namespace {{`{{ if .rollout }}{{ .rollout.metadata.namespace }}{{ else }}{{ .analysisrun.metadata.namespace }}{{ end }}`}} failed!
+                Rollout: {{`{{ if .rollout }}{{ .rollout.metadata.name }}{{ else }}N/A{{ end }}`}}
+                Image: {{`{{ if and .rollout .rollout.spec.template.spec.containers }}{{ (index .rollout.spec.template.spec.containers 0).image }}{{ else }}N/A{{ end }}`}}
+          triggers:
+            trigger.on-rollout-completed: |
+              - send: [on-rollout-completed]
+            trigger.on-rollout-aborted: |
+              - send: [on-rollout-aborted]
+            trigger.on-analysis-run-failed: |
+              - send: [on-analysis-run-failed]
+          subscriptions:
+            - recipients:
+                - telegram:{{ .Values.telegram.chatId }}
+              triggers:
+                - on-rollout-completed
+                - on-rollout-aborted
+                - on-analysis-run-failed
+        {{- end }}
   destination:
     server: https://kubernetes.default.svc
     namespace: argo-rollouts
