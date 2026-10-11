@@ -5,7 +5,7 @@ image:
   pullPolicy: IfNotPresent
 api:
   replicas: 2
-  faultErrorRate: "0.5"
+  faultErrorRate: "0"
   faultLatencyMs: "0"
   releaseNote: "demo-2026-10-11T20:44:19Z"
   resources:
