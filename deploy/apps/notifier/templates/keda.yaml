@@ -1,0 +1,63 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: notifier-db
+  labels:
+    app.kubernetes.io/name: notifier-db
+    app.kubernetes.io/part-of: notifier
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: notifier-db-credentials
+      key: password
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: notifier-worker
+  labels:
+    app.kubernetes.io/name: notifier-worker
+    app.kubernetes.io/part-of: notifier
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notifier-worker
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  pollingInterval: 5
+  cooldownPeriod: 30
+  triggers:
+    - type: postgresql
+      metadata:
+        host: notifier-db-rw.notifier.svc
+        port: "5432"
+        userName: notifier
+        dbName: notifier
+        sslmode: require
+        query: "SELECT count(*) FROM messages WHERE status='pending'"
+        targetQueryValue: "200"
+        activationTargetQueryValue: "0"
+      authenticationRef:
+        name: notifier-db
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: notifier-api
+  labels:
+    app.kubernetes.io/name: notifier-api
+    app.kubernetes.io/part-of: notifier
+spec:
+  scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
+    name: notifier-api
+  minReplicaCount: 2
+  maxReplicaCount: 6
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+        query: sum(rate(nginx_ingress_controller_requests{ingress="notifier-api",namespace="notifier"}[1m])) or vector(0)
+        threshold: "50"

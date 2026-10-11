@@ -1,8 +1,9 @@
 TF := terraform -chdir=infra/terraform
 KUBECONFIG_LOCAL := .kube/config
+IMAGE ?= $(shell awk '/^image:/{f=1} f && /repository:/{repo=$$2} f && /tag:/{gsub(/"/, "", $$2); tag=$$2; f=0} END{print repo ":" tag}' deploy/apps/notifier/values.yaml)
 
 .DEFAULT_GOAL := help
-.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal
+.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal load-campaign load-api load-clean watch
 
 all: help
 
@@ -102,3 +103,33 @@ argocd-password: ## Получить первоначальный пароль a
 
 apps: ## Показать список Application в ArgoCD
 	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get applications
+
+load-campaign: ## Запустить генерацию кампании рассылки через Kubernetes Job (N=50000)
+	@N_VAL=$${N:-50000}; \
+	EPOCH=$$(date +%s); \
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-campaign-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen campaign -url http://notifier-api-stable.notifier.svc/api/v1/campaigns -recipients $$N_VAL
+
+load-api: ## Запустить нагрузочное HTTP-тестирование API через Kubernetes Job (RPS=300, DURATION=2m)
+	@RPS_VAL=$${RPS:-300}; \
+	DUR_VAL=$${DURATION:-2m}; \
+	EPOCH=$$(date +%s); \
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier create job loadgen-api-$$EPOCH --image=$(IMAGE) -- /usr/local/bin/loadgen http -url http://notifier-api-stable.notifier.svc/api/v1/campaigns -rps $$RPS_VAL -duration $$DUR_VAL
+
+load-clean: ## Удалить завершенные Kubernetes Jobs генератора нагрузки (loadgen-*)
+	@for j in $$(kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get jobs -o jsonpath='{range .items[?(@.status.succeeded > 0)]}{.metadata.name}{" "}{end}' 2>/dev/null); do \
+		case "$$j" in loadgen-*) kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier delete job "$$j" ;; esac; \
+	done
+
+watch: ## Отслеживать в реальном времени статус KEDA ScaledObjects, поды и размер очереди
+	@while true; do \
+		clear; \
+		echo "=== ScaledObjects (KEDA) ==="; \
+		kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get scaledobjects 2>/dev/null || true; \
+		echo ""; \
+		echo "=== Pods (API & Worker) ==="; \
+		kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier get pods -l 'app.kubernetes.io/name in (notifier-api, notifier-worker)' 2>/dev/null || true; \
+		echo ""; \
+		echo "=== Pending Queue (notifier-db-1) ==="; \
+		kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n notifier exec -i notifier-db-1 -c postgres -- psql -U notifier -d notifier -t -A -c "SELECT count(*) FROM messages WHERE status='pending';" 2>/dev/null || echo "N/A"; \
+		sleep 2; \
+	done

@@ -61,15 +61,31 @@ if [ -z "$GRAFANA_ADMIN_PASSWORD" ]; then
   unset NEW_PASSWORD
 fi
 
+# If NOTIFIER_DB_PASSWORD is missing, generate and append it to .env
+NOTIFIER_DB_PASSWORD="$(get_env_var "NOTIFIER_DB_PASSWORD")"
+if [ -z "$NOTIFIER_DB_PASSWORD" ]; then
+  NEW_DB_PASSWORD="$(LC_ALL=C tr -dc A-Za-z0-9 < /dev/urandom | head -c 32)"
+  printf "\n# Notifier database password\nNOTIFIER_DB_PASSWORD=%s\n" "$NEW_DB_PASSWORD" >> "$ENV_FILE"
+  NOTIFIER_DB_PASSWORD="$NEW_DB_PASSWORD"
+  unset NEW_DB_PASSWORD
+fi
+
 # Helper function to seal a Kubernetes secret offline
 # Arguments:
 #   $1: namespace
 #   $2: secret name
+#   [--type=<type>]
 #   $3..: secret key=value pairs
 seal_secret() {
   local namespace="$1"
   local secret_name="$2"
   shift 2
+
+  local secret_type="Opaque"
+  if [[ "$#" -gt 0 && "$1" == --type=* ]]; then
+    secret_type="${1#--type=}"
+    shift
+  fi
 
   local ns_dir="${PLATFORM_SECRETS_DIR}/${namespace}"
   mkdir -p "${ns_dir}"
@@ -93,6 +109,7 @@ EOF
   local sealed_file="${ns_dir}/${secret_name}.sealed.yaml"
   kubectl create secret generic "${secret_name}" \
     --namespace "${namespace}" \
+    --type="${secret_type}" \
     "${from_literal_args[@]}" \
     --dry-run=client -o yaml | \
   kubeseal \
@@ -106,12 +123,18 @@ EOF
 
 # ------------------------------------------------------------------------------
 # Secrets Table
-# Add new secrets here as: seal_secret <namespace> <secret_name> <key1=val1> ...
+# Add new secrets here as: seal_secret <namespace> <secret_name> [--type=...] <key1=val1> ...
 # ------------------------------------------------------------------------------
 
 # 1. Grafana admin secret (namespace: monitoring, name: grafana-admin)
 seal_secret "monitoring" "grafana-admin" \
   "admin-user=admin" \
   "admin-password=${GRAFANA_ADMIN_PASSWORD}"
+
+# 2. Notifier database secret (namespace: notifier, name: notifier-db-credentials)
+seal_secret "notifier" "notifier-db-credentials" \
+  --type="kubernetes.io/basic-auth" \
+  "username=notifier" \
+  "password=${NOTIFIER_DB_PASSWORD}"
 
 echo "All secrets successfully sealed offline."

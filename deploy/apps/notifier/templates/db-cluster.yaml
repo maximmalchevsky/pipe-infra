@@ -1,0 +1,26 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: notifier-db
+  labels:
+    app.kubernetes.io/name: notifier-db
+    app.kubernetes.io/part-of: notifier
+spec:
+  instances: {{ .Values.db.instances | default 1 }}
+  storage:
+    size: {{ .Values.db.storage | default "2Gi" }}
+    storageClass: {{ .Values.db.storageClass | default "local-path" }}
+  bootstrap:
+    initdb:
+      database: notifier
+      owner: notifier
+      secret:
+        name: notifier-db-credentials
+  monitoring:
+    enablePodMonitor: true
+  resources:
+    requests:
+      cpu: {{ .Values.db.resources.requests.cpu | default "100m" }}
+      memory: {{ .Values.db.resources.requests.memory | default "256Mi" }}
+    limits:
+      memory: {{ .Values.db.resources.limits.memory | default "512Mi" }}

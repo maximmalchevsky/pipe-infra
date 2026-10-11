@@ -1,0 +1,6 @@
+apiVersion: v2
+name: notifier
+description: Bulk SMS Campaign Simulator Helm Chart
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

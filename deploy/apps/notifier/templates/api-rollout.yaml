@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: notifier-api
+  labels:
+    app.kubernetes.io/name: notifier-api
+    app.kubernetes.io/part-of: notifier
+spec:
+  replicas: {{ .Values.api.replicas | default 2 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-api
+  strategy:
+    canary:
+      canaryService: notifier-api-canary
+      stableService: notifier-api-stable
+      trafficRouting:
+        nginx:
+          stableIngress: notifier-api
+      steps:
+        - setWeight: 20
+        - pause:
+            duration: 30s
+        - setWeight: 50
+        - pause:
+            duration: 30s
+        # TODO: Stage 8 - AnalysisTemplate comes here
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notifier-api
+        app.kubernetes.io/part-of: notifier
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notifier-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          command:
+            - /usr/local/bin/notifier-api
+          env:
+            - name: APP_VERSION
+              value: {{ .Values.image.tag | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notifier-db-credentials
+                  key: password
+            - name: DATABASE_URL
+              value: "postgres://notifier:$(DB_PASSWORD)@notifier-db-rw.notifier.svc:5432/notifier?sslmode=require"
+            - name: FAULT_ERROR_RATE
+              value: {{ .Values.api.faultErrorRate | default "0" | quote }}
+            - name: FAULT_LATENCY_MS
+              value: {{ .Values.api.faultLatencyMs | default "0" | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: {{ .Values.api.resources.requests.cpu | default "50m" }}
+              memory: {{ .Values.api.resources.requests.memory | default "64Mi" }}
+            limits:
+              memory: {{ .Values.api.resources.limits.memory | default "256Mi" }}

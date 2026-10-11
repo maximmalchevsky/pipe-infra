@@ -1,0 +1,94 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notifier-api
+  labels:
+    app.kubernetes.io/name: notifier-api
+    app.kubernetes.io/part-of: notifier
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notifier-worker
+  labels:
+    app.kubernetes.io/name: notifier-worker
+    app.kubernetes.io/part-of: notifier
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-worker
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: notifier
+  labels:
+    app.kubernetes.io/name: notifier
+    app.kubernetes.io/part-of: notifier
+spec:
+  groups:
+    - name: notifier.rules
+      rules:
+        - alert: NotifierApiDown
+          expr: absent(up{job="notifier-api"}) == 1 or sum(up{job="notifier-api"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Notifier API is down"
+            description: "Notifier API instances are either absent or failing health checks for 2m."
+
+        - alert: NotifierApiHigh5xxRate
+          expr: |
+            sum(rate(http_requests_total{namespace="notifier",code=~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{namespace="notifier"}[2m])) > 0.05
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notifier API high 5xx error rate"
+            description: "5xx HTTP response ratio is above 5% for 2m."
+
+        - alert: NotifierApiHighLatency
+          expr: |
+            histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace="notifier"}[5m])) by (le)) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Notifier API high latency"
+            description: "p95 HTTP request duration is greater than 0.5s for 5m."
+
+        - alert: NotifierQueueStuck
+          expr: |
+            (notifier_queue_pending{namespace="notifier"} > 0)
+            and
+            (sum(rate(notifier_messages_processed_total{namespace="notifier"}[10m])) == 0)
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Notifier queue stuck"
+            description: "Pending queue is greater than 0 and no messages have been processed for 10m."
+
+        - alert: PostgresDown
+          expr: cnpg_collector_up{namespace="notifier"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PostgreSQL database is down"
+            description: "CloudNativePG collector reports database down in notifier namespace."

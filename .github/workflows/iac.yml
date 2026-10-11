@@ -1,0 +1,112 @@
+name: IaC
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - 'deploy/**'
+      - 'Makefile'
+      - '.github/workflows/iac.yml'
+  pull_request:
+    paths:
+      - 'infra/**'
+      - 'deploy/**'
+      - 'Makefile'
+      - '.github/workflows/iac.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Format & Validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Terraform Init & Validate
+        run: |
+          terraform -chdir=infra/terraform init -backend=false
+          terraform -chdir=infra/terraform validate
+
+  helm:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Run Helm Lint
+        run: |
+          for chart in deploy/root deploy/platform/metallb-config deploy/platform/argocd-ingress; do
+            echo "Linting $chart..."
+            helm lint "$chart"
+          done
+          if [ -d deploy/apps/notifier ]; then
+            echo "Linting deploy/apps/notifier..."
+            helm lint deploy/apps/notifier
+          fi
+
+  ansible:
+    name: Ansible Syntax Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Ansible & Galaxy Collections
+        run: |
+          pip install ansible || pip install --break-system-packages ansible
+          ansible-galaxy collection install -r infra/ansible/requirements.yml
+
+      - name: Ansible Playbook Syntax Check
+        run: ansible-playbook infra/ansible/site.yml -i localhost, --syntax-check
+
+  trivy:
+    name: Trivy IaC Config Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run Trivy Config Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          skip-dirs: 'infra/ansible/kube'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
+          format: 'sarif'
+          output: 'trivy-iac-results.sarif'
+
+      - name: Upload Trivy IaC SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-iac-results.sarif'

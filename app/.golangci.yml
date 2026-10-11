@@ -1,0 +1,22 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosec
+    - revive
+  exclusions:
+    rules:
+      # Exclude G404 (Use of weak random number generator) for math/rand in fault injection and loadgen.
+      # Pseudo-random number generator is acceptable for synthetic traffic generation and fault injection simulation.
+      - linters:
+          - gosec
+        text: "G404"
+        path: "(fault|loadgen)"

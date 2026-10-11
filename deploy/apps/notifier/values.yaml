@@ -1,0 +1,48 @@
+domain: hackathon.lan
+
+image:
+  repository: ghcr.io/maximmalchevsky/pipe-infra/notifier
+  tag: "sha-dd93f6a"
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 2
+  faultErrorRate: "0"
+  faultLatencyMs: "0"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+worker:
+  batchSize: 100
+  batchTimeout: 30s
+  terminationGracePeriodSeconds: 45
+  sendLatencyMs: 20
+  sendFailRate: "0.01"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+db:
+  instances: 1
+  storage: 2Gi
+  storageClass: local-path
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+loadgen:
+  campaign:
+    recipients: 50000
+  http:
+    rps: 300
+    duration: 2m

@@ -1,0 +1,243 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - '.github/workflows/ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: app
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: notifier
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Run unit tests with race detector and coverage
+        working-directory: app
+        run: go test ./... -race -count=1 -coverprofile=coverage.out
+
+      - name: Run integration tests
+        working-directory: app
+        env:
+          DATABASE_URL: postgres://postgres:postgrespassword@localhost:5432/notifier?sslmode=disable
+        run: go test -tags integration ./... -count=1
+
+      - name: Upload test coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: app/coverage.out
+          if-no-files-found: error
+
+  build:
+    name: Build & Push Container Image
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ steps.meta_custom.outputs.image_ref }}
+      short_sha: ${{ steps.meta_custom.outputs.short_sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Compute short SHA and image metadata
+        id: meta_custom
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=ghcr.io/maximmalchevsky/pipe-infra/notifier:sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/maximmalchevsky/pipe-infra/notifier
+          tags: |
+            type=raw,value=sha-${{ steps.meta_custom.outputs.short_sha }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v7
+        with:
+          context: app
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=sha-${{ steps.meta_custom.outputs.short_sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  scan:
+    name: Trivy Security Scan
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    steps:
+      - name: Run Trivy vulnerability scanner (gate)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_ref }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner (SARIF generation)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ needs.build.outputs.image_ref }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: true
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  bump:
+    name: GitOps Image Tag Bump
+    needs: [build, scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository (main branch)
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Bump notifier image tag in GitOps values
+        run: |
+          SHORT_SHA="${{ needs.build.outputs.short_sha }}"
+          VALUES_FILE="deploy/apps/notifier/values.yaml"
+
+          if [ ! -f "$VALUES_FILE" ]; then
+            echo "Notice: $VALUES_FILE does not exist yet. Skipping GitOps bump."
+            exit 0
+          fi
+
+          # Update the image.tag field using preinstalled yq
+          yq -i ".image.tag = \"sha-${SHORT_SHA}\"" "$VALUES_FILE"
+
+          if git diff --quiet "$VALUES_FILE"; then
+            echo "No changes detected in $VALUES_FILE; image tag is already sha-${SHORT_SHA}."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The workflow's paths filter (app/**, .github/workflows/ci.yml)
+          # combined with [skip ci] prevents infinite CI trigger loops when values.yaml is updated
+          git add "$VALUES_FILE"
+          git commit -m "ci: deploy notifier sha-${SHORT_SHA} [skip ci]"
+
+          # Retry push up to 3 times with rebase to handle concurrent commits cleanly
+          for attempt in 1 2 3; do
+            echo "Pushing commit (attempt $attempt/3)..."
+            if git pull --rebase origin main && git push origin main; then
+              echo "Successfully pushed GitOps image tag bump."
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Push failed. Retrying in 2 seconds..."
+              sleep 2
+            fi
+          done
+
+          echo "Error: Failed to push GitOps bump commit after 3 attempts."
+          exit 1
