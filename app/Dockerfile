@@ -31,7 +31,8 @@ COPY --from=build /out/notifier-api /usr/local/bin/notifier-api
 COPY --from=build /out/notifier-worker /usr/local/bin/notifier-worker
 COPY --from=build /out/loadgen /usr/local/bin/loadgen
 
-USER nonroot:nonroot
+# Numeric user so kubelet can verify runAsNonRoot
+USER 65532:65532
 
 EXPOSE 8080 9090
 

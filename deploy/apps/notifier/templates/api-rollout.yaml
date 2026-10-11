@@ -33,6 +33,9 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -73,6 +76,8 @@ spec:
             periodSeconds: 10
           securityContext:
             runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
