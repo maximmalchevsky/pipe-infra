@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: notifier-postgres
+    environment:
+      POSTGRES_DB: notifier
+      POSTGRES_USER: notifier
+      POSTGRES_PASSWORD: notifier_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifier -d notifier"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notifier-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://notifier:notifier_secret@postgres:5432/notifier?sslmode=disable
+      HTTP_ADDR: ":8080"
+      APP_VERSION: "dev"
+      FAULT_ERROR_RATE: "0"
+      FAULT_LATENCY_MS: "0"
+    ports:
+      - "8080:8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notifier-worker
+    entrypoint: ["/usr/local/bin/notifier-worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgres://notifier:notifier_secret@postgres:5432/notifier?sslmode=disable
+      HTTP_ADDR: ":9090"
+      APP_VERSION: "dev"
+      BATCH_SIZE: "100"
+      BATCH_TIMEOUT: "30s"
+      SEND_LATENCY_MS: "20"
+      SEND_FAIL_RATE: "0.01"
+      MAX_ATTEMPTS: "3"
+      POLL_INTERVAL: "1s"
+    ports:
+      - "9090:9090"
+
+volumes:
+  pgdata:
