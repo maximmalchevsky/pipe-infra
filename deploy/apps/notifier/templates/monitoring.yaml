@@ -1,18 +1,21 @@
 apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+kind: PodMonitor
 metadata:
   name: notifier-api
   labels:
     app.kubernetes.io/name: notifier-api
     app.kubernetes.io/part-of: notifier
 spec:
+  jobLabel: app.kubernetes.io/name
+  podTargetLabels:
+    - rollouts-pod-template-hash
   selector:
     matchLabels:
       app.kubernetes.io/name: notifier-api
-  endpoints:
+  podMetricsEndpoints:
     - port: http
       path: /metrics
-      interval: 15s
+      interval: 10s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

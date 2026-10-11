@@ -21,6 +21,10 @@ spec:
       analysis:
         templates:
           - templateName: notifier-api-health
+        args:
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
         startingStep: 1
       steps:
         - setWeight: 20

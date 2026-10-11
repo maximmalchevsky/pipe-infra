@@ -6,9 +6,15 @@ metadata:
     app.kubernetes.io/name: notifier-api
     app.kubernetes.io/part-of: notifier
 spec:
-  # Note: ingress-nginx identifies canary traffic via non-empty canary label
-  # (e.g. canary="notifier-notifier-api-canary-80"), while exported_service remains
-  # "notifier-api-stable" and stable requests have canary="".
+  # Note: Analysis measures canary health using the application's own Prometheus metrics
+  # scoped to canary pods via rollouts_pod_template_hash set to the canary pod template hash.
+  # In fault injection demos, image tag/version is identical between canary and stable,
+  # so rollouts-pod-template-hash distinguishes them.
+  # Requests are filtered by excluding service routes (route!~"/healthz|/readyz|/metrics|/version").
+  # Injected 500 errors answer before router matching and get route="unknown", so excluding
+  # service routes ensures faulted requests are included in analysis.
+  args:
+    - name: canary-hash
   metrics:
     - name: success-rate
       interval: 20s
@@ -20,7 +26,7 @@ spec:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!="",status!~"5.."}[30s])) / sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[30s]))
+            sum(rate(http_requests_total{namespace="notifier",job="notifier-api",rollouts_pod_template_hash="{{ "{{args.canary-hash}}" }}",route!~"/healthz|/readyz|/metrics|/version",code!~"5.."}[30s])) / sum(rate(http_requests_total{namespace="notifier",job="notifier-api",rollouts_pod_template_hash="{{ "{{args.canary-hash}}" }}",route!~"/healthz|/readyz|/metrics|/version"}[30s]))
     - name: latency-p95
       interval: 30s
       failureLimit: 2
@@ -31,4 +37,4 @@ spec:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace="notifier",ingress="notifier-api",canary!=""}[2m]))) and on() sum(increase(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[2m])) >= 20
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="notifier",job="notifier-api",rollouts_pod_template_hash="{{ "{{args.canary-hash}}" }}",route!~"/healthz|/readyz|/metrics|/version"}[2m]))) and on() sum(increase(http_requests_total{namespace="notifier",job="notifier-api",rollouts_pod_template_hash="{{ "{{args.canary-hash}}" }}",route!~"/healthz|/readyz|/metrics|/version"}[2m])) >= 20
