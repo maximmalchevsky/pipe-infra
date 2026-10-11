@@ -156,6 +156,12 @@ variable "control_vip_hostnum" {
   description = "Host number inside network_cidr for the control-plane virtual IP (keepalived), used only when control_count > 1."
 }
 
+variable "metallb_ip_hostnum" {
+  type        = number
+  default     = 175
+  description = "Host number in network_cidr for the MetalLB LoadBalancer IP used by ingress-nginx."
+}
+
 variable "gateway" {
   type        = string
   description = "Default gateway IP address for cluster VMs."

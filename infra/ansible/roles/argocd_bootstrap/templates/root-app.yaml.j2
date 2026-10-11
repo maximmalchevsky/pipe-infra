@@ -9,6 +9,12 @@ spec:
     repoURL: {{ argocd_root_app_repo_url }}
     targetRevision: {{ argocd_root_app_revision }}
     path: {{ argocd_root_app_path }}
+    helm:
+      valuesObject:
+        repoURL: "{{ argocd_root_app_repo_url }}"
+        targetRevision: "{{ argocd_root_app_revision }}"
+        domain: "{{ cluster_domain }}"
+        metallbIP: "{{ metallb_ip }}"
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ argocd_namespace }}

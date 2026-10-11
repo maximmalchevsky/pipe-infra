@@ -7,6 +7,7 @@ locals {
 
   ha_enabled  = var.control_count > 1
   control_vip = cidrhost(var.network_cidr, var.control_vip_hostnum)
+  metallb_ip  = cidrhost(var.network_cidr, var.metallb_ip_hostnum)
 
   controls = {
     for i, name in local.control_names : name => {

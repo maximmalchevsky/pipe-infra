@@ -274,6 +274,8 @@ argoCDAdminPassword: ""
 argoCDEnableServerSideDiff: "true"
 argoCDTrackingMethod: "annotation"
 argoCDIgnoreAggregateRoles: "true"
+argocd_root_app_repo_url: "https://github.com/maximmalchevsky/pipe-infra.git"
+argocd_root_app_revision: "main"
 
 # ============================================================
 # [ОПЦИОНАЛЬНО] Offline-режим (air-gap)

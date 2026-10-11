@@ -2,7 +2,7 @@ TF := terraform -chdir=infra/terraform
 KUBECONFIG_LOCAL := .kube/config
 
 .DEFAULT_GOAL := help
-.PHONY: all help check deps tfvars infra cluster up plan status down lint
+.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps
 
 all: help
 
@@ -78,3 +78,21 @@ lint: ## Проверить синтаксис Terraform и Ansible
 	terraform fmt -check -recursive infra/terraform
 	$(TF) validate
 	ansible-playbook infra/ansible/site.yml --syntax-check
+
+hosts: ## Вывести строку для /etc/hosts (IP MetalLB и домены)
+	@DOMAIN=$$(grep -E '^TF_VAR_search_domain=' .env 2>/dev/null | sed -E 's/^TF_VAR_search_domain=["'"'"']?([^"'"'"' ]+).*/\1/' || true); \
+	DOMAIN=$${DOMAIN:-hackathon.lan}; \
+	IP=$$($(TF) output -raw metallb_ip); \
+	echo "$$IP argocd.$$DOMAIN grafana.$$DOMAIN api.$$DOMAIN"; \
+	echo "Для добавления в /etc/hosts выполните: make hosts | sudo tee -a /etc/hosts" >&2
+
+trust-ca: ## Экспортировать CA кластера и показать команду для macOS Keychain
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n cert-manager get secret hackathon-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > .kube/hackathon-root-ca.crt
+	@echo "Для добавления сертификата в доверенные macOS выполните:"
+	@echo "  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain .kube/hackathon-root-ca.crt"
+
+argocd-password: ## Получить первоначальный пароль admin для ArgoCD
+	@kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+apps: ## Показать список Application в ArgoCD
+	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get applications

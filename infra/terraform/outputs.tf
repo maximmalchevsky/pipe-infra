@@ -37,11 +37,31 @@ output "nodes" {
     condition     = !local.ha_enabled || local.control_vip != var.gateway
     error_message = "Control-plane VIP equals the gateway: adjust control_vip_hostnum."
   }
+
+  precondition {
+    condition     = !contains(local.all_ips, local.metallb_ip)
+    error_message = "MetalLB IP collides with a node IP: lower worker_count or change metallb_ip_hostnum."
+  }
+
+  precondition {
+    condition     = local.metallb_ip != var.gateway
+    error_message = "MetalLB IP equals the gateway: adjust metallb_ip_hostnum."
+  }
+
+  precondition {
+    condition     = !local.ha_enabled || local.metallb_ip != local.control_vip
+    error_message = "MetalLB IP collides with control-plane VIP: adjust metallb_ip_hostnum or control_vip_hostnum."
+  }
 }
 
 output "k8s_api_endpoint" {
   description = "Kubernetes API endpoint URL."
   value       = local.ha_enabled ? "https://${local.control_vip}:7443" : "https://${local.controls[local.control_names[0]].ip}:6443"
+}
+
+output "metallb_ip" {
+  description = "MetalLB LoadBalancer IP used by ingress-nginx."
+  value       = local.metallb_ip
 }
 
 output "ansible_inventory" {
@@ -65,6 +85,7 @@ output "ansible_inventory" {
           cluster_name               = var.cluster_name
           cluster_domain             = var.search_domain
           k8s_api_ip                 = local.ha_enabled ? local.control_vip : local.controls[local.control_names[0]].ip
+          metallb_ip                 = local.metallb_ip
         },
         { for k, v in {
           ha_cluster_virtual_ip   = local.control_vip

@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hackathon-root-ca
+  namespace: cert-manager
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  isCA: true
+  commonName: "hackathon.lan Root CA"
+  secretName: hackathon-root-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 87600h
+  issuerRef:
+    name: selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
