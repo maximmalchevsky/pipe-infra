@@ -1,0 +1,16 @@
+.env
+.secrets/
+.kube/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+*.retry
+.idea/
+.DS_Store
+tfplan
+*.tfplan
+tmp/
+.claude/settings.local.json

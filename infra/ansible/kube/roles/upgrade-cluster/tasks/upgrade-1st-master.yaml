@@ -1,0 +1,34 @@
+---
+# Обновление первой control plane ноды
+
+- name: Проверка версии
+  ansible.builtin.include_tasks: _version-check.yaml
+
+- name: Обновление репозитория и пакетов
+  ansible.builtin.include_tasks: _update-repo.yaml
+
+- name: Drain ноды
+  ansible.builtin.shell:
+    cmd: kubectl drain {{ ansible_facts['fqdn'] }} --ignore-daemonsets --delete-emptydir-data
+
+- name: Обновление master ноды
+  ansible.builtin.shell:
+    cmd: "kubeadm upgrade apply v{{ kube_version }} -y"
+
+- name: Перезапуск kubelet
+  ansible.builtin.systemd:
+    state: restarted
+    daemon_reload: true
+    name: kubelet
+
+- name: Ожидание готовности apiserver
+  ansible.builtin.command: kubectl get nodes
+  register: apiserver_check
+  until: apiserver_check.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Uncordon master ноды
+  ansible.builtin.shell:
+    cmd: "kubectl uncordon {{ ansible_facts['fqdn'] }}"

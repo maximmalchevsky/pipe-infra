@@ -1,0 +1,19 @@
+---
+# Подготовка к подключению worker нод
+
+- name: Сгенерировать токен подключения
+  ansible.builtin.command: kubeadm token create
+  register: join_token
+
+- name: Получить discovery-token-ca-cert-hash
+  ansible.builtin.shell: |
+    openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
+    openssl rsa -pubin -outform der 2>/dev/null | \
+    openssl dgst -sha256 -hex | \
+    sed 's/^.* //'
+  register: discovery_token_ca_cert_hash
+
+- name: Получить адрес API сервера
+  ansible.builtin.shell: |
+    kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | cut -c9-
+  register: join_path

@@ -1,0 +1,8 @@
+version: 2
+ethernets:
+  primary:
+    match: { name: "en*" }
+    dhcp4: false
+    addresses: ${jsonencode([address])}
+    routes: [{ to: default, via: ${jsonencode(gateway)} }]
+    nameservers: { addresses: ${jsonencode(dns_servers)}, search: ${jsonencode([search_domain])} }

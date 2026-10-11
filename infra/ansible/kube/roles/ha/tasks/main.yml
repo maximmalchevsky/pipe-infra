@@ -1,0 +1,51 @@
+---
+# Настройка HAProxy + Keepalived для HA доступа к API
+
+- name: Настроить sysctl ip_nonlocal_bind
+  ansible.posix.sysctl:
+    name: "net.ipv4.ip_nonlocal_bind"
+    value: "1"
+    sysctl_set: true
+    state: present
+    ignoreerrors: true
+
+- name: Установить пакеты HA [RedHat]
+  when: ansible_os_family == "RedHat"
+  ansible.builtin.dnf:
+    name:
+      - keepalived
+      - haproxy
+    state: present
+
+- name: Установить пакеты HA [Debian]
+  when: ansible_os_family == "Debian"
+  ansible.builtin.apt:
+    name:
+      - keepalived
+      - haproxy
+    state: present
+    update_cache: true
+
+- name: Скопировать keepalived.conf
+  ansible.builtin.template:
+    src: keepalived.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: '0600'
+  notify: restart keepalived
+
+- name: Скопировать haproxy.cfg
+  ansible.builtin.template:
+    src: haproxy.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: '0600'
+  register: haproxy_conf
+  notify: restart haproxy
+
+- name: Включить keepalived и haproxy
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - keepalived
+    - haproxy

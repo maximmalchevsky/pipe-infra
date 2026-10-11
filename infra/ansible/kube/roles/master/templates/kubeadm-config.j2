@@ -1,0 +1,70 @@
+# ============================================================
+# kubeadm-config.yaml — конфигурация для инициализации кластера
+# Режим: stacked etcd (встроенный)
+# ============================================================
+
+# InitConfiguration — параметры первой ноды
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: {{ hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address }}
+  bindPort: 6443
+nodeRegistration:
+  criSocket: {{ cri_socket }}
+  imagePullPolicy: IfNotPresent
+  name: {{ ansible_facts.nodename }}
+---
+# ClusterConfiguration — общие параметры кластера
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+certificatesDir: /etc/kubernetes/pki
+clusterName: {{ kube_domain_name }}
+imageRepository: {{ imageRepository }}
+kubernetesVersion: {{ kube_version }}
+{% if ha_cluster_virtual_ip is defined and ha_cluster_virtual_ip != "" %}
+# HA режим — virtual IP через HAProxy + Keepalived
+controlPlaneEndpoint: {{ ha_cluster_virtual_ip }}:{{ ha_cluster_virtual_port }}
+{% else %}
+# Single-node — прямой доступ к API
+controlPlaneEndpoint: {{ hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address }}:6443
+{% endif %}
+networking:
+  dnsDomain: {{ kube_domain_name }}
+  podSubnet: {{ pod_network_cidr }}
+  serviceSubnet: {{ service_cidr }}
+---
+# KubeProxyConfiguration — настройки kube-proxy (IPVS mode)
+# strictARP: true — необходимо для корректной работы MetalLB
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+clusterCIDR: {{ pod_network_cidr }}
+ipvs:
+  strictARP: true
+mode: ipvs
+---
+# KubeletConfiguration — настройки kubelet
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+# DNS — используем NodeLocalDNS
+clusterDNS:
+- {{ nodelocaldns_local_ip }}
+# Резервирование ресурсов для системных демонов
+{% if system_reserved is defined and system_reserved %}
+systemReserved:
+{% if system_memory_reserved is defined %}
+  memory: {{ system_memory_reserved }}
+{% endif %}
+{% if system_cpu_reserved is defined %}
+  cpu: {{ system_cpu_reserved }}
+{% endif %}
+{% if system_ephemeral_storage_reserved is defined %}
+  ephemeral-storage: {{ system_ephemeral_storage_reserved }}
+{% endif %}
+{% endif %}
+# Лимиты логов контейнеров
+{% if container_log_max_size is defined %}
+containerLogMaxSize: {{ container_log_max_size }}
+{% endif %}
+{% if container_log_max_size is defined %}
+containerLogMaxFiles: {{ container_log_max_files }}
+{% endif %}

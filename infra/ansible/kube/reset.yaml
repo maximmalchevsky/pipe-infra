@@ -1,0 +1,203 @@
+---
+- name: Reset cluster
+  hosts: k8s_cluster
+
+  tasks:
+  - name: Reset k8s cluster
+    ansible.builtin.command: kubeadm reset --force
+    ignore_errors: true
+
+  - name: Disable keepalived and haproxy services
+    when:
+      - ha_cluster_virtual_ip is defined
+      - ha_cluster_virtual_ip != ""
+      - inventory_hostname in groups['k8s_masters']
+    ansible.builtin.service:
+      name: "{{ item }}"
+      state: stopped
+      enabled: false
+    with_items:
+      - keepalived
+      - haproxy
+    ignore_errors: true
+
+  - name: Uninstall HA packages RedHat
+    when:
+      - ha_cluster_virtual_ip is defined
+      - ha_cluster_virtual_ip != ""
+      - inventory_hostname in groups['k8s_masters']
+      - ansible_facts['os_family'] == "RedHat"
+    ansible.builtin.dnf:
+      name:
+        - keepalived
+        - haproxy
+      state: absent
+
+  - name: Uninstall HA packages Debian
+    when:
+      - ha_cluster_virtual_ip is defined
+      - ha_cluster_virtual_ip != ""
+      - inventory_hostname in groups['k8s_masters']
+      - ansible_facts['os_family'] == "Debian"
+    ansible.builtin.apt:
+      name:
+        - keepalived
+        - haproxy
+      state: absent
+
+  - name: Disabled containerd service
+    when: cri == "containerd"
+    ansible.builtin.service:
+      name: containerd
+      state: stopped
+      enabled: false
+
+  - name: Delete config.toml file
+    when: cri == "containerd"
+    ansible.builtin.file:
+      path: /etc/containerd/config.toml
+      state: absent
+
+  - name: Disabled CRI-O service
+    when: cri == "crio"
+    ansible.builtin.service:
+      name: crio
+      state: stopped
+      enabled: false
+
+  - name: Uninstall Kubernetes packages RedHat
+    when:
+      - ansible_facts['os_family'] == "RedHat"
+    ansible.builtin.dnf:
+      name:
+        - kubectl
+        - kubeadm
+        - kubelet
+      state: absent
+
+  - name: Uninstall Kubernetes packages Debian
+    when:
+      - ansible_facts['os_family'] == "Debian"
+    ansible.builtin.apt:
+      name:
+        - kubectl
+        - kubeadm
+        - kubelet
+      state: absent
+
+  - name: Uninstall containerd [RedHat]
+    when:
+      - ansible_facts['os_family'] == "RedHat" and cri == "containerd"
+    ansible.builtin.dnf:
+      name:
+        - containerd
+      state: absent
+
+  - name: Uninstall containerd [Debian]
+    when:
+      - ansible_facts['os_family'] == "Debian" and cri == "containerd"
+    ansible.builtin.apt:
+      name:
+        - containerd
+      state: absent
+
+  - name: Uninstall CRI-O [RedHat]
+    when:
+      - ansible_facts['os_family'] == "RedHat" and cri == "crio"
+    ansible.builtin.dnf:
+      name:
+        - crio
+      state: absent
+
+  - name: Uninstall CRI-O [Debian]
+    when:
+      - ansible_facts['os_family'] == "Debian" and cri == "crio"
+    ansible.builtin.apt:
+      name:
+        - cri-o
+      state: absent
+
+  - name: Copy clear fw script
+    ansible.builtin.copy:
+      src: clear_fw.sh
+      dest: /root/clear_fw.sh
+      owner: root
+      mode: '0700'
+
+  - name: Clear firewall
+    ansible.builtin.shell: /root/clear_fw.sh
+    ignore_errors: true
+
+  - name: Delete k8s utils manifests
+    ansible.builtin.file:
+      path: /etc/kubernetes/utils
+      state: absent
+
+- name: Reset external etcd cluster
+  hosts: etcd_nodes
+
+  tasks:
+    - name: Check if external etcd reset is enabled
+      ansible.builtin.meta: end_play
+      when: >
+        not (
+          etcd_mode is defined and
+          etcd_mode == "external" and
+          reset_etcd | default(false) | bool
+        )
+
+    - name: Stop etcd service
+      ansible.builtin.service:
+        name: etcd
+        state: stopped
+        enabled: false
+      ignore_errors: true
+
+    - name: Remove etcd systemd unit
+      ansible.builtin.file:
+        path: /etc/systemd/system/etcd.service
+        state: absent
+
+    - name: Remove etcd container
+      ansible.builtin.command: ctr -n k8s.io c rm etcd
+      ignore_errors: true
+
+    - name: Remove etcd data directory
+      ansible.builtin.file:
+        path: /var/lib/etcd
+        state: absent
+
+    - name: Remove etcd configuration directory
+      ansible.builtin.file:
+        path: /etc/etcd
+        state: absent
+
+    - name: Remove etcd environment file
+      ansible.builtin.file:
+        path: /etc/etcd/etcd.env
+        state: absent
+      ignore_errors: true
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+- name: Cleanup etcd PKI on Ansible control node
+  hosts: localhost
+  connection: local
+  become: false
+
+  tasks:
+    - name: Check if external etcd reset is enabled
+      ansible.builtin.meta: end_play
+      when: >
+        not (
+          etcd_mode is defined and
+          etcd_mode == "external" and
+          reset_etcd | default(false) | bool
+        )
+
+    - name: Remove local etcd PKI directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/files/etcd-pki"
+        state: absent

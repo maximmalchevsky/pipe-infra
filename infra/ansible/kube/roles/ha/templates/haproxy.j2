@@ -1,0 +1,41 @@
+# ============================================================
+# HAProxy конфигурация для HA доступа к Kubernetes API
+# ============================================================
+
+global
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     4000
+    user        haproxy
+    group       haproxy
+    daemon
+
+defaults
+    log     global
+    mode    tcp
+    retries 2
+    timeout client 30m
+    timeout connect 4s
+    timeout server 30m
+    timeout check 5s
+
+# Frontend — точка входа (virtual IP)
+frontend main
+    bind {{ ha_cluster_virtual_ip }}:{{ ha_cluster_virtual_port }}
+    default_backend             app
+
+# Backend — control plane ноды (round-robin)
+backend app
+    balance     roundrobin
+{% for server in groups['k8s_masters'] %}
+    server {{ hostvars[server]['ansible_facts'].hostname }} {{ hostvars[server]['ansible_facts'].default_ipv4.address }}:6443 check
+{% endfor %}
+
+# Статистика HAProxy — доступна на порту 9000
+listen stats
+    bind *:9000
+    mode http
+    stats enable
+    stats hide-version
+    stats realm Haproxy\ Statistics
+    stats uri /haproxy_stats

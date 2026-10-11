@@ -1,0 +1,2 @@
+# Configuration is managed via .env at the repository root.
+# See .env.example and run `make up` (or `scripts/env-to-tfvars.sh`).

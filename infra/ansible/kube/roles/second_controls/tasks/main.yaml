@@ -1,0 +1,52 @@
+---
+# Главная задача: подготовка и подключение дополнительных control plane нод
+
+- name: Проверить статус подключения ноды к кластеру
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+  when:
+    - groups['k8s_masters'] | length > 1
+    - inventory_hostname != groups['k8s_masters'][0]
+
+- name: Определить необходимость подключения дополнительных control plane нод
+  ansible.builtin.set_fact:
+    needs_second_control_join: >-
+      {%- set unjoined = [] -%}
+      {%- for host in groups['k8s_masters'] if host != groups['k8s_masters'][0] -%}
+        {%- if not (hostvars[host].kubelet_conf.stat.exists | default(false)) -%}
+          {%- set _ = unjoined.append(host) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ unjoined | length > 0 }}
+  when:
+    - groups['k8s_masters'] | length > 1
+    - inventory_hostname == groups['k8s_masters'][0]
+
+- name: Подготовка к подключению
+  ansible.builtin.include_tasks: prepare.yaml
+  when:
+    - groups['k8s_masters'] | length > 1
+    - inventory_hostname == groups['k8s_masters'][0]
+    - needs_second_control_join | default(false) | bool
+
+- name: Подключить дополнительные control plane ноды
+  ansible.builtin.include_tasks: join.yaml
+  when:
+    - groups['k8s_masters'] | length > 1
+    - inventory_hostname != groups['k8s_masters'][0]
+    - not (kubelet_conf.stat.exists | default(false))
+
+- name: Перезапустить coredns
+  ansible.builtin.command: kubectl -n kube-system rollout restart deployment/coredns
+  when:
+    - groups['k8s_masters'] | length > 1
+    - inventory_hostname == groups['k8s_masters'][0]
+    - >-
+      {%- set joined = [] -%}
+      {%- for host in groups['k8s_masters'] if host != groups['k8s_masters'][0] -%}
+        {%- if hostvars[host].second_control_joined | default(false) -%}
+          {%- set _ = joined.append(host) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ joined | length > 0 }}

@@ -1,0 +1,24 @@
+---
+- name: Wait for VMs (SSH + cloud-init)
+  hosts: k8s_cluster
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Wait for SSH connection
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      register: r
+      failed_when: r.rc not in [0, 2]
+
+- import_playbook: kube/install-cluster.yaml
+
+- name: Post-install (kubeconfig + ArgoCD bootstrap)
+  hosts: k8s_masters[0]
+  become: true
+  roles:
+    - kubeconfig
+    - argocd_bootstrap

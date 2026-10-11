@@ -1,0 +1,89 @@
+---
+- name: Check installed helm version
+  ansible.builtin.command:
+    cmd: helm version --short
+  register: helm_version_check
+  failed_when: false
+  changed_when: false
+
+- name: Install Helm binary
+  when: helm_version_check.rc != 0 or helm_version not in helm_version_check.stdout
+  block:
+    - name: Create temporary directory for Helm download
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: helm
+      register: helm_temp_dir
+
+    - name: Download and unarchive Helm
+      ansible.builtin.unarchive:
+        src: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.tar.gz"
+        dest: "{{ helm_temp_dir.path }}"
+        remote_src: true
+
+    - name: Copy Helm binary to /usr/local/bin/helm
+      ansible.builtin.copy:
+        src: "{{ helm_temp_dir.path }}/linux-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}/helm"
+        dest: /usr/local/bin/helm
+        mode: "0755"
+        remote_src: true
+
+    - name: Clean up temporary Helm directory
+      ansible.builtin.file:
+        path: "{{ helm_temp_dir.path }}"
+        state: absent
+
+- name: Add Argo Helm repository
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: https://argoproj.github.io/argo-helm
+
+- name: Deploy ArgoCD via Helm
+  kubernetes.core.helm:
+    name: argocd
+    chart_ref: argo/argo-cd
+    chart_version: "{{ argocd_chart_version }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    wait: true
+    wait_timeout: "600s"
+    values:
+      configs:
+        params:
+          "server.insecure": true
+        cm:
+          "application.resourceTrackingMethod": annotation
+      server:
+        ingress:
+          enabled: false
+      dex:
+        enabled: false
+      redis:
+        image:
+          repository: "{{ argocd_redis_image_repository }}"
+
+- name: Install python3-kubernetes package for k8s module
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+
+- name: Template ArgoCD root Application manifest
+  ansible.builtin.template:
+    src: root-app.yaml.j2
+    dest: /etc/kubernetes/argocd-root-app.yaml
+    mode: "0644"
+  when: argocd_root_app_repo_url != ""
+
+- name: Apply ArgoCD root Application
+  kubernetes.core.k8s:
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    src: /etc/kubernetes/argocd-root-app.yaml
+    state: present
+  when: argocd_root_app_repo_url != ""
+
+- name: Display ArgoCD credentials and port-forward instructions
+  ansible.builtin.debug:
+    msg:
+      - "Get admin password: kubectl --kubeconfig .kube/config -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
+      - "Port-forward UI: kubectl --kubeconfig .kube/config -n argocd port-forward svc/argocd-server 8080:80"

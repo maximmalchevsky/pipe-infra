@@ -1,0 +1,8 @@
+server = "https://registry-1.docker.io"
+capabilities = ["pull", "resolve", "push"]
+
+{% for dockerhubMirrorURL in dockerhubMirrorURLs -%}
+{% set mirror = dockerhubMirrorURL | regex_replace('^https?://', '') | regex_replace('/v2/?$', '') -%}
+[host."https://{{ mirror }}"]
+  capabilities = ["pull", "resolve"]
+{% endfor %}

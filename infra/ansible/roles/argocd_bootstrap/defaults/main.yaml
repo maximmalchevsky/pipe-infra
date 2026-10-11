@@ -1,0 +1,25 @@
+---
+# Version of Helm binary to install on the control-plane node if missing or mismatched
+helm_version: "v3.21.2"
+
+# Kubernetes namespace where ArgoCD will be installed
+argocd_namespace: argocd
+
+# Version of the argo/argo-cd Helm chart to deploy (overridable)
+argocd_chart_version: "10.1.2"
+
+# Path to the Kubernetes admin kubeconfig on the control-plane node
+argocd_kubeconfig: /etc/kubernetes/admin.conf
+
+# Git repository URL containing deploy/ manifests; empty string skips root Application creation
+argocd_root_app_repo_url: ""
+
+# Path within the git repository for the root Application
+argocd_root_app_path: deploy/root
+
+# Git branch, tag, or revision for the root Application
+argocd_root_app_revision: main
+
+# Redis image repository; overrides default ecr-public.aws.com due to CloudFront reachability issues
+argocd_redis_image_repository: docker.io/library/redis
+

@@ -1,0 +1,26 @@
+---
+# Обновление дополнительных control plane нод
+
+- name: Проверка версии
+  ansible.builtin.include_tasks: _version-check.yaml
+
+- name: Обновление репозитория и пакетов
+  ansible.builtin.include_tasks: _update-repo.yaml
+
+- name: Drain ноды
+  ansible.builtin.shell:
+    cmd: kubectl drain {{ ansible_facts['fqdn'] }} --ignore-daemonsets
+
+- name: Обновление control plane ноды
+  ansible.builtin.shell:
+    cmd: "kubeadm upgrade node"
+
+- name: Перезапуск kubelet
+  ansible.builtin.systemd:
+    state: restarted
+    daemon_reload: true
+    name: kubelet
+
+- name: Uncordon control plane ноды
+  ansible.builtin.shell:
+    cmd: "kubectl uncordon {{ ansible_facts['fqdn'] }}"
