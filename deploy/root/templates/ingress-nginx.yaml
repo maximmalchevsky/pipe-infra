@@ -27,6 +27,7 @@ spec:
             enabled: true
             serviceMonitor:
               enabled: true
+              scrapeInterval: 10s
           allowSnippetAnnotations: false
   destination:
     server: https://kubernetes.default.svc

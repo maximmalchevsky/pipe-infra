@@ -11,19 +11,19 @@ spec:
   # "notifier-api-stable" and stable requests have canary="".
   metrics:
     - name: success-rate
-      interval: 30s
+      interval: 20s
       failureLimit: 1
-      inconclusiveLimit: 2
+      inconclusiveLimit: 3
       successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.95
       failureCondition: len(result) > 0 && !isNaN(result[0]) && result[0] < 0.95
       provider:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!="",status!~"5.."}[1m])) / sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[1m]))
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!="",status!~"5.."}[30s])) / sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[30s]))
     - name: latency-p95
       interval: 30s
-      failureLimit: 1
+      failureLimit: 2
       inconclusiveLimit: 2
       successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] < 0.5
       failureCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.5
@@ -31,4 +31,4 @@ spec:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace="notifier",ingress="notifier-api",canary!=""}[1m])))
+            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace="notifier",ingress="notifier-api",canary!=""}[2m]))) and on() sum(increase(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[2m])) >= 20
