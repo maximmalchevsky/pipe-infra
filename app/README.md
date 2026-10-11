@@ -57,10 +57,26 @@ docker compose up -d
 
 ## Генерация нагрузки
 
+Утилита `loadgen` поддерживает генерацию трафика напрямую или через ingress-nginx в Kubernetes.
+
+### Флаги
+
+- `-host string`: передает значение в заголовок HTTP `Host` (`req.Host`) и в TLS SNI (`tls.Config.ServerName`). Используется внутри кластера для обращения к ingress-контроллеру по внутреннему DNS-имени контроллера с сохранением виртуального хоста (например, `api.hackathon.lan`).
+- `-insecure bool`: включает `InsecureSkipVerify` для TLS. Предназначен исключительно для лабораторий и синтетического трафика внутри кластера с приватным CA.
+- `-duration duration`: длительность теста (например, `30s`, `2m`). Значение `0` означает бесконечный запуск до сигнала SIGTERM/SIGINT (подходит для постоянного фонового Deployment генерации нагрузки). По сигналу выводит итоговый отчет и завершается с кодом 0. При длительных прогонах каждые 30 секунд выводит однострочный прогресс (`total`, `rps`, `status`, `p95`) в stdout для мониторинга через `kubectl logs`.
+
+### Примеры запуска
+
 ```bash
-# Создание кампании на 50 000 сообщений
+# Локальное создание кампании на 50 000 сообщений
 ./loadgen campaign -url http://localhost:8080 -recipients 50000 -text "Промо-акция"
 
-# Открытый цикл запросов 300 RPS на 2 минуты
+# Создание кампании через ingress-nginx с приватным CA внутри кластера
+./loadgen campaign -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local -host api.hackathon.lan -insecure -recipients 50000 -text "Промо-акция"
+
+# Локальный открытый цикл запросов 300 RPS на 2 минуты
 ./loadgen http -url http://localhost:8080/api/v1/campaigns -rps 300 -duration 2m -workers 64
+
+# Фоновая нагрузка внутри кластера через ingress-nginx до SIGTERM (duration 0)
+./loadgen http -url https://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/v1/campaigns -host api.hackathon.lan -insecure -rps 300 -duration 0 -workers 64
 ```

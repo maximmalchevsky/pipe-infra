@@ -4,6 +4,7 @@ package loadgen
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,8 +56,17 @@ func (s *Summary) Record(statusCode int, latency time.Duration, err error) {
 // Calculate computes summary statistics for the given test duration.
 func (s *Summary) Calculate(duration time.Duration) Stats {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return CalculateStats(s.total, s.statusCodes, s.errorCount, s.latencies, duration)
+	total := s.total
+	errCount := s.errorCount
+	scCopy := make(map[int]int, len(s.statusCodes))
+	for k, v := range s.statusCodes {
+		scCopy[k] = v
+	}
+	latenciesCopy := make([]time.Duration, len(s.latencies))
+	copy(latenciesCopy, s.latencies)
+	s.mu.Unlock()
+
+	return CalculateStats(total, scCopy, errCount, latenciesCopy, duration)
 }
 
 // CalculateStats performs percentile and throughput calculations.
@@ -148,4 +158,28 @@ func (s Stats) PrintReport() {
 	fmt.Printf("  min:  %v\n", s.Min)
 	fmt.Printf("  max:  %v\n", s.Max)
 	fmt.Printf("  mean: %v\n", s.Mean)
+}
+
+// ProgressLine returns a single-line summary containing total requests, RPS, per-status counts, and p95 latency.
+func (s Stats) ProgressLine() string {
+	codes := make([]int, 0, len(s.StatusCodes))
+	for c := range s.StatusCodes {
+		codes = append(codes, c)
+	}
+	sort.Ints(codes)
+
+	statusParts := make([]string, 0, len(codes))
+	for _, c := range codes {
+		statusParts = append(statusParts, fmt.Sprintf("%d:%d", c, s.StatusCodes[c]))
+	}
+	statusStr := strings.Join(statusParts, " ")
+	if statusStr == "" {
+		statusStr = "none"
+	}
+	if s.Errors > 0 {
+		statusStr += fmt.Sprintf(" err:%d", s.Errors)
+	}
+
+	return fmt.Sprintf("Progress: total=%d, rps=%.1f, status=[%s], p95=%v",
+		s.TotalRequests, s.AchievedRPS, statusStr, s.P95)
 }

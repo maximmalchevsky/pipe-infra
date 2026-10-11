@@ -2,6 +2,7 @@ package loadgen
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +71,31 @@ func TestSummaryRecord(t *testing.T) {
 	}
 	if stats.StatusCodes[500] != 1 {
 		t.Errorf("expected 1 status 500, got %d", stats.StatusCodes[500])
+	}
+}
+
+func TestStats_ProgressLine(t *testing.T) {
+	stats := Stats{
+		TotalRequests: 100,
+		AchievedRPS:   50.0,
+		StatusCodes:   map[int]int{200: 95, 500: 5},
+		Errors:        1,
+		P95:           25 * time.Millisecond,
+	}
+	line := stats.ProgressLine()
+	if !strings.Contains(line, "total=100") {
+		t.Errorf("expected total=100 in %q", line)
+	}
+	if !strings.Contains(line, "rps=50.0") {
+		t.Errorf("expected rps=50.0 in %q", line)
+	}
+	if !strings.Contains(line, "200:95") || !strings.Contains(line, "500:5") {
+		t.Errorf("expected status codes in %q", line)
+	}
+	if !strings.Contains(line, "p95=25ms") {
+		t.Errorf("expected p95=25ms in %q", line)
+	}
+	if !strings.Contains(line, "err:1") {
+		t.Errorf("expected err:1 in %q", line)
 	}
 }

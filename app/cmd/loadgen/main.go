@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -44,10 +43,10 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Subcommands:")
 	fmt.Println("  campaign   Create bulk SMS campaigns")
-	fmt.Println("             loadgen campaign -url http://api:8080 -recipients 50000 -text \"promo\" [-count 1]")
+	fmt.Println("             loadgen campaign -url http://api:8080 -recipients 50000 -text \"promo\" [-count 1] [-host string] [-insecure]")
 	fmt.Println()
 	fmt.Println("  http       Generate HTTP traffic (open-loop) against an endpoint")
-	fmt.Println("             loadgen http -url http://api:8080/api/v1/campaigns -rps 300 -duration 2m [-workers 64] [-method GET]")
+	fmt.Println("             loadgen http -url http://api:8080/api/v1/campaigns -rps 300 -duration 2m [-workers 64] [-method GET] [-host string] [-insecure]")
 }
 
 func runCampaignCmd(args []string) {
@@ -56,6 +55,8 @@ func runCampaignCmd(args []string) {
 	recipients := fs.Int("recipients", 50000, "Number of recipients per campaign")
 	text := fs.String("text", "Hackathon campaign promo", "SMS text (1..160 chars)")
 	count := fs.Int("count", 1, "Number of campaigns to create")
+	host := fs.String("host", "", "HTTP Host header (req.Host) and TLS SNI server name")
+	insecure := fs.Bool("insecure", false, "Skip TLS certificate verification (lab-only, in-cluster synthetic traffic with a private CA)")
 	_ = fs.Parse(args)
 
 	apiEndpoint := strings.TrimRight(*targetURL, "/")
@@ -63,7 +64,11 @@ func runCampaignCmd(args []string) {
 		apiEndpoint += "/api/v1/campaigns"
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := loadgen.NewClient(loadgen.ClientConfig{
+		Host:     *host,
+		Insecure: *insecure,
+		Workers:  1,
+	})
 
 	for i := 0; i < *count; i++ {
 		payload, _ := json.Marshal(map[string]any{
@@ -72,7 +77,17 @@ func runCampaignCmd(args []string) {
 		})
 
 		start := time.Now()
-		resp, err := client.Post(apiEndpoint, "application/json", bytes.NewReader(payload))
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, apiEndpoint, bytes.NewReader(payload))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to create request %d: %v\n", i+1, err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if *host != "" {
+			req.Host = *host
+		}
+
+		resp, err := client.Do(req)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to send request %d: %v\n", i+1, err)
 			continue
@@ -99,9 +114,11 @@ func runHTTPCmd(args []string) {
 	fs := flag.NewFlagSet("http", flag.ExitOnError)
 	targetURL := fs.String("url", "http://localhost:8080/api/v1/campaigns", "Target URL to benchmark")
 	rps := fs.Float64("rps", 300.0, "Target requests per second")
-	duration := fs.Duration("duration", 2*time.Minute, "Benchmark duration (e.g. 30s, 2m)")
+	duration := fs.Duration("duration", 2*time.Minute, "Benchmark duration (e.g. 30s, 2m, 0 to run until SIGTERM/SIGINT)")
 	workers := fs.Int("workers", 64, "Number of concurrent worker goroutines")
 	method := fs.String("method", "GET", "HTTP method (GET, POST, etc.)")
+	host := fs.String("host", "", "HTTP Host header (req.Host) and TLS SNI server name")
+	insecure := fs.Bool("insecure", false, "Skip TLS certificate verification (lab-only, in-cluster synthetic traffic with a private CA)")
 	_ = fs.Parse(args)
 
 	if *rps <= 0 {
@@ -112,86 +129,46 @@ func runHTTPCmd(args []string) {
 		fmt.Fprintln(os.Stderr, "error: -workers must be positive")
 		os.Exit(1)
 	}
+	if *duration < 0 {
+		fmt.Fprintln(os.Stderr, "error: -duration must be non-negative (0 runs until SIGTERM/SIGINT)")
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	fmt.Printf("Starting open-loop HTTP loadgen against %s\n", *targetURL)
-	fmt.Printf("Target RPS: %.1f, Duration: %v, Workers: %d, Method: %s\n", *rps, *duration, *workers, *method)
-
-	summary := loadgen.NewSummary()
-	jobs := make(chan struct{}, *workers*4)
-
-	// Custom transport with pooled connections
-	tr := &http.Transport{
-		MaxIdleConns:        *workers * 4,
-		MaxIdleConnsPerHost: *workers * 4,
-		IdleConnTimeout:     90 * time.Second,
-		DisableCompression:  true,
+	if *duration == 0 {
+		fmt.Printf("Target RPS: %.1f, Duration: unlimited (until SIGTERM/SIGINT), Workers: %d, Method: %s\n", *rps, *workers, *method)
+	} else {
+		fmt.Printf("Target RPS: %.1f, Duration: %v, Workers: %d, Method: %s\n", *rps, *duration, *workers, *method)
 	}
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   10 * time.Second,
+	if *host != "" {
+		fmt.Printf("Host override: %s (SNI and Host header)\n", *host)
+	}
+	if *insecure {
+		fmt.Println("TLS insecure: InsecureSkipVerify=true (lab-only)")
 	}
 
-	var wg sync.WaitGroup
-	for i := 0; i < *workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for range jobs {
-				req, err := http.NewRequestWithContext(ctx, *method, *targetURL, nil)
-				if err != nil {
-					summary.Record(0, 0, err)
-					continue
-				}
-
-				start := time.Now()
-				resp, err := client.Do(req)
-				latency := time.Since(start)
-
-				if err != nil {
-					summary.Record(0, latency, err)
-					continue
-				}
-
-				_, _ = io.Copy(io.Discard, resp.Body)
-				_ = resp.Body.Close()
-				summary.Record(resp.StatusCode, latency, nil)
-			}
-		}()
+	cfg := loadgen.HTTPConfig{
+		TargetURL:      *targetURL,
+		RPS:            *rps,
+		Duration:       *duration,
+		Workers:        *workers,
+		Method:         *method,
+		Host:           *host,
+		Insecure:       *insecure,
+		ProgressWriter: os.Stdout,
 	}
 
-	// Open-loop ticker
-	tickerInterval := time.Duration(float64(time.Second) / *rps)
-	ticker := time.NewTicker(tickerInterval)
-	defer ticker.Stop()
-
-	testStart := time.Now()
-	timer := time.NewTimer(*duration)
-	defer timer.Stop()
-
-producerLoop:
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("\nAborting early due to interrupt signal...")
-			break producerLoop
-		case <-timer.C:
-			break producerLoop
-		case <-ticker.C:
-			select {
-			case jobs <- struct{}{}:
-			default:
-				// Worker pool saturated; drop token to maintain open-loop rate
-			}
-		}
+	stats, err := loadgen.RunHTTP(ctx, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error running loadgen: %v\n", err)
+		os.Exit(1)
 	}
 
-	close(jobs)
-	wg.Wait()
-	actualDuration := time.Since(testStart)
-
-	stats := summary.Calculate(actualDuration)
+	if ctx.Err() != nil {
+		fmt.Println("\nReceived interrupt signal, stopping...")
+	}
 	stats.PrintReport()
 }
