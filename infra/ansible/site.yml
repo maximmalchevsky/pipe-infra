@@ -21,4 +21,5 @@
   become: true
   roles:
     - kubeconfig
+    - sealed_secrets_key
     - argocd_bootstrap

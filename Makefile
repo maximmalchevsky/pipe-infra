@@ -2,7 +2,7 @@ TF := terraform -chdir=infra/terraform
 KUBECONFIG_LOCAL := .kube/config
 
 .DEFAULT_GOAL := help
-.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps
+.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal
 
 all: help
 
@@ -33,6 +33,12 @@ deps: ## Установить коллекции Ansible (infra/ansible/requirem
 tfvars: ## Сгенерировать infra/terraform/env.auto.tfvars из .env
 	@scripts/env-to-tfvars.sh
 
+sealing-key: ## Сгенерировать пару ключей Sealed Secrets (.secrets/sealed-secrets.{key,crt})
+	@scripts/gen-sealing-key.sh
+
+seal: ## Зашифровать секреты из .env в SealedSecret манифесты
+	@scripts/seal-secrets.sh
+
 infra: tfvars ## Развернуть ВМ в Proxmox через Terraform (init + apply)
 	$(TF) init -input=false
 	$(TF) apply -auto-approve -input=false
@@ -40,7 +46,7 @@ infra: tfvars ## Развернуть ВМ в Proxmox через Terraform (init
 cluster: ## Настроить Kubernetes кластер и ArgoCD через Ansible
 	ansible-playbook infra/ansible/site.yml
 
-up: check deps infra cluster ## Развернуть стек целиком (Terraform + Ansible)
+up: check deps sealing-key infra cluster ## Развернуть стек целиком (Terraform + Ansible)
 	@echo ""
 	@echo "================================================================="
 	@echo "Кластер успешно развернут!"

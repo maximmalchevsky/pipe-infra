@@ -1,0 +1,5 @@
+---
+sealed_secrets_key_local_dir: "{{ playbook_dir }}/../../.secrets"
+sealed_secrets_key_name: sealed-secrets-key-hackathon
+sealed_secrets_namespace: kube-system
+sealed_secrets_kubeconfig: /etc/kubernetes/admin.conf

@@ -25,6 +25,8 @@ spec:
             name: nginx
           metrics:
             enabled: true
+            serviceMonitor:
+              enabled: true
           allowSnippetAnnotations: false
   destination:
     server: https://kubernetes.default.svc
@@ -36,6 +38,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
     retry:
       limit: 5
       backoff:

@@ -1,0 +1,41 @@
+---
+- name: Install python3-kubernetes package for k8s module
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check local sealing key files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ sealed_secrets_key_local_dir }}/sealed-secrets.key"
+    - "{{ sealed_secrets_key_local_dir }}/sealed-secrets.crt"
+  delegate_to: localhost
+  become: false
+  register: sealed_key_file_checks
+
+- name: Fail if local sealing key files are missing
+  ansible.builtin.fail:
+    msg: "Local sealing key file {{ item.item }} not found. Run make sealing-key to generate it."
+  when: not item.stat.exists
+  loop: "{{ sealed_key_file_checks.results }}"
+
+- name: Create or update Sealed Secrets private key secret in kube-system
+  kubernetes.core.k8s:
+    kubeconfig: "{{ sealed_secrets_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ sealed_secrets_key_name }}"
+        namespace: "{{ sealed_secrets_namespace }}"
+        labels:
+          sealedsecrets.bitnami.com/sealed-secrets-key: active
+      type: kubernetes.io/tls
+      data:
+        tls.crt: "{{ lookup('file', sealed_secrets_key_local_dir ~ '/sealed-secrets.crt') | b64encode }}"
+        tls.key: "{{ lookup('file', sealed_secrets_key_local_dir ~ '/sealed-secrets.key') | b64encode }}"
+  no_log: true
