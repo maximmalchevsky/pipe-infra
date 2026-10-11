@@ -101,7 +101,8 @@ jobs:
           scan-ref: '.'
           skip-dirs: 'infra/ansible/kube'
           severity: 'HIGH,CRITICAL'
-          exit-code: '0'
+          limit-severities-for-sarif: true
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-iac-results.sarif'
 

@@ -44,3 +44,5 @@ loadgen:
 traffic:
   enabled: true
   rps: 5
+networkPolicy:
+  enabled: true

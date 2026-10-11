@@ -1,0 +1,218 @@
+{{- if .Values.networkPolicy.enabled }}
+# Default deny all ingress and egress traffic in notifier namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-default-deny
+  labels:
+    app.kubernetes.io/name: notifier-default-deny
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow all pods egress to CoreDNS and NodeLocalDNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-allow-dns
+  labels:
+    app.kubernetes.io/name: notifier-allow-dns
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        - ipBlock:
+            cidr: 169.254.25.10/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Ingress from ingress-nginx and Prometheus; egress to PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-api
+  labels:
+    app.kubernetes.io/name: notifier-api
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: notifier-db
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Ingress from Prometheus; egress to PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-worker
+  labels:
+    app.kubernetes.io/name: notifier-worker
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-worker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: notifier-db
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Egress to ingress-nginx controller HTTPS port
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-traffic
+  labels:
+    app.kubernetes.io/name: notifier-traffic
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: notifier-traffic
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+              app.kubernetes.io/component: controller
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Ingress for PostgreSQL clients, operators, and monitoring; egress for replication and Kubernetes API
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-db
+  labels:
+    app.kubernetes.io/name: notifier-db
+    app.kubernetes.io/part-of: notifier
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: notifier-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifier-api
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notifier-worker
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keda
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keda-operator
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: notifier-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 8000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: notifier-db
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        # API server endpoints are node IPs; 0.0.0.0/0 port restriction ensures portability across node CIDRs/HA
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 6443
+{{- end }}
