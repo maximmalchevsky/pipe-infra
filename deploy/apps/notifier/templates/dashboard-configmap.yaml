@@ -119,9 +119,15 @@ data:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\"}[1m]))",
-              "legendFormat": "{{`{{exported_service}}`}}",
+              "expr": "sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary=\"\"}[1m]))",
+              "legendFormat": "stable",
               "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary!=\"\"}[1m]))",
+              "legendFormat": "canary",
+              "refId": "B"
             }
           ]
         },
@@ -133,9 +139,15 @@ data:
           "targets": [
             {
               "datasource": { "type": "prometheus", "uid": "prometheus" },
-              "expr": "sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\",status=~\"5..\"}[1m])) / sum by (exported_service) (rate(nginx_ingress_controller_requests{exported_service=~\"notifier-api-(stable|canary)\"}[1m]))",
-              "legendFormat": "{{`{{exported_service}}`}}",
+              "expr": "sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary=\"\",status=~\"5..\"}[1m])) / sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary=\"\"}[1m]))",
+              "legendFormat": "stable",
               "refId": "A"
+            },
+            {
+              "datasource": { "type": "prometheus", "uid": "prometheus" },
+              "expr": "sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary!=\"\",status=~\"5..\"}[1m])) / sum(rate(nginx_ingress_controller_requests{exported_namespace=\"notifier\",ingress=\"notifier-api\",canary!=\"\"}[1m]))",
+              "legendFormat": "canary",
+              "refId": "B"
             }
           ]
         }

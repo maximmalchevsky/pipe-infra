@@ -6,6 +6,9 @@ metadata:
     app.kubernetes.io/name: notifier-api
     app.kubernetes.io/part-of: notifier
 spec:
+  # Note: ingress-nginx identifies canary traffic via non-empty canary label
+  # (e.g. canary="notifier-notifier-api-canary-80"), while exported_service remains
+  # "notifier-api-stable" and stable requests have canary="".
   metrics:
     - name: success-rate
       interval: 30s
@@ -17,9 +20,7 @@ spec:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            sum(rate(nginx_ingress_controller_requests{exported_service="notifier-api-canary",status!~"5.."}[1m]))
-            /
-            sum(rate(nginx_ingress_controller_requests{exported_service="notifier-api-canary"}[1m]))
+            sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!="",status!~"5.."}[1m])) / sum(rate(nginx_ingress_controller_requests{exported_namespace="notifier",ingress="notifier-api",canary!=""}[1m]))
     - name: latency-p95
       interval: 30s
       failureLimit: 1
@@ -30,4 +31,4 @@ spec:
         prometheus:
           address: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
           query: |
-            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_service="notifier-api-canary"}[1m])))
+            histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket{exported_namespace="notifier",ingress="notifier-api",canary!=""}[1m])))
