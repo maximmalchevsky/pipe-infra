@@ -1,7 +1,7 @@
 domain: hackathon.lan
 image:
   repository: ghcr.io/maximmalchevsky/pipe-infra/notifier
-  tag: "sha-e565562"
+  tag: "sha-37ed21c"
   pullPolicy: IfNotPresent
 api:
   replicas: 2
