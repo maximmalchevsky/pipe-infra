@@ -1,8 +1,9 @@
 # https://github.com/containers/image/blob/main/docs/containers-registries.conf.5.md
 [[registry]]
 prefix = "docker.io"
+location = "registry-1.docker.io"
 
 {% for dockerhubMirrorURL in dockerhubMirrorURLs %}
 [[registry.mirror]]
-location = "{{ dockerhubMirrorURL }}"
+location = "{{ dockerhubMirrorURL | regex_replace('^https?://', '') | regex_replace('/v2/?$', '') }}"
 {% endfor %}
