@@ -501,7 +501,7 @@
       when: groups['k8s_masters'] | length > 1
 
 - name: Install worker nodes
-  hosts: groups['k8s_masters'][0],k8s_workers
+  hosts: k8s_masters[0],k8s_workers
 
   roles:
     - workers

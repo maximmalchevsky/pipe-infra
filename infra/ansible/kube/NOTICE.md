@@ -24,3 +24,4 @@ This directory contains code adapted from [BigKAA/00-kube-ansible](https://githu
 - Made `second_controls` role idempotent: gated on `groups['k8s_masters'] | length > 1`, checked `/etc/kubernetes/kubelet.conf` via stat, marked read-only lookups with `changed_when: false`, and conditioned CoreDNS restart only on actual node join.
 - Fixed directory modes across roles to ensure execute bits (`0755` for `/etc/containerd`, certs.d, CNI, and container registry directories; quoted `'0700'` for private directories).
 - Wrapped `prepare-hosts` hook inclusions in conditional blocks to prevent changed status on empty task lists.
+- Fixed worker play host pattern: `groups['k8s_masters'][0]` was not templated by Ansible → first master dropped from the play, join token never generated on clean installs; replaced with `k8s_masters[0]`, and removed `run_once` from `Prepare to Join`, since run_once picked a worker as the first play host and the `when` skipped it.
