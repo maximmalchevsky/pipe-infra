@@ -16,6 +16,7 @@ spec:
     helm:
       valuesObject:
         domain: "{{ .Values.domain }}"
+        cni: "{{ .Values.cni }}"
   destination:
     server: https://kubernetes.default.svc
     namespace: notifier

@@ -1,3 +1,5 @@
+# passed from root app; enables Cilium-specific policies
+cni: calico
 domain: hackathon.lan
 image:
   repository: ghcr.io/maximmalchevsky/pipe-infra/notifier

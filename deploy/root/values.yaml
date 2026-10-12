@@ -2,6 +2,8 @@ repoURL: https://github.com/maximmalchevsky/pipe-infra.git
 targetRevision: main
 domain: hackathon.lan
 metallbIP: 192.168.89.175
+# set by Ansible from group_vars cni
+cni: calico
 
 telegram:
   enabled: false

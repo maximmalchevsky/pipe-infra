@@ -217,4 +217,48 @@ spec:
       ports:
         - protocol: TCP
           port: 6443
+{{- if eq .Values.cni "cilium" }}
+---
+# NodeLocalDNS listens on the node; Cilium ipBlock doesn't match the host entity
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: notifier-cilium-allow-node-dns
+  labels:
+    app.kubernetes.io/name: notifier-cilium-allow-node-dns
+    app.kubernetes.io/part-of: notifier
+spec:
+  endpointSelector: {}
+  egress:
+    - toEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# CNPG instance manager talks to the API; ipBlock doesn't match the kube-apiserver entity
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: notifier-cilium-db-apiserver
+  labels:
+    app.kubernetes.io/name: notifier-cilium-db-apiserver
+    app.kubernetes.io/part-of: notifier
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: notifier-db
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+{{- end }}
 {{- end }}
