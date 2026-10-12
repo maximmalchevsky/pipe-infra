@@ -1,5 +1,9 @@
 TF := terraform -chdir=infra/terraform
 KUBECONFIG_LOCAL := .kube/config
+# Доп. аргументы ansible-playbook, напр. ANSIBLE_ARGS="-e cni=cilium"
+ANSIBLE_ARGS ?=
+# Доп. аргументы terraform, напр. TF_ARGS="-var control_count=3"
+TF_ARGS ?=
 IMAGE ?= $(shell awk '/^image:/{f=1} f && /repository:/{repo=$$2} f && /tag:/{gsub(/"/, "", $$2); tag=$$2; f=0} END{print repo ":" tag}' deploy/apps/notifier/values.yaml)
 DOMAIN ?= $(shell grep -E '^TF_VAR_search_domain=' .env 2>/dev/null | sed -E 's/^TF_VAR_search_domain=["'"'"']?([^"'"'"' ]+).*/\1/' || true)
 ifeq ($(DOMAIN),)
@@ -46,10 +50,10 @@ seal: ## Зашифровать секреты из .env в SealedSecret ман�
 
 infra: tfvars ## Развернуть ВМ в Proxmox через Terraform (init + apply)
 	$(TF) init -input=false
-	$(TF) apply -auto-approve -input=false
+	$(TF) apply -auto-approve -input=false $(TF_ARGS)
 
 cluster: ## Настроить Kubernetes кластер и ArgoCD через Ansible
-	ansible-playbook infra/ansible/site.yml
+	ansible-playbook infra/ansible/site.yml $(ANSIBLE_ARGS)
 
 up: check deps sealing-key infra cluster wait ## Развернуть стек целиком (Terraform + Ansible)
 	@echo ""
@@ -74,7 +78,7 @@ up: check deps sealing-key infra cluster wait ## Развернуть стек �
 	@echo "================================================================="
 
 plan: tfvars ## Показать план изменений Terraform
-	$(TF) plan
+	$(TF) plan $(TF_ARGS)
 
 status: ## Показать статус нод в Terraform и Kubernetes
 	-$(TF) output nodes
@@ -85,7 +89,7 @@ down: ## Удалить виртуальные машины в Proxmox (треб
 	@printf "Для подтверждения введите 'yes': "; \
 	read ans; \
 	if [ "$$ans" = "yes" ]; then \
-		$(TF) destroy -auto-approve; \
+		$(TF) destroy -auto-approve $(TF_ARGS); \
 	else \
 		echo "Удаление отменено."; \
 	fi
