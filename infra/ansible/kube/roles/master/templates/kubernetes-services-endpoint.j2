@@ -9,6 +9,6 @@ data:
   KUBERNETES_SERVICE_HOST: "{{ ha_cluster_virtual_ip }}"
   KUBERNETES_SERVICE_PORT: "{{ ha_cluster_virtual_port }}"
 {% else %}
-  KUBERNETES_SERVICE_HOST: "{{ hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address }}"
+  KUBERNETES_SERVICE_HOST: "{{ hostvars[groups['k8s_masters'][0]].ansible_host | default(hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address) }}"
   KUBERNETES_SERVICE_PORT: "6443"
 {% endif %}

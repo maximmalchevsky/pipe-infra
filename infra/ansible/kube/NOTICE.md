@@ -28,3 +28,5 @@ This directory contains code adapted from [BigKAA/00-kube-ansible](https://githu
 - Added optional `registry` to Calico Installation template driven by `calico_registry` (defaulted to `quay.io/` in `group_vars/k8s_cluster`) because docker.io pulls stalled.
 - CRI-O mirror drop-in had no `location` for the docker.io registry and kept the scheme and `/v2` in mirror locations, so CRI-O 1.36 failed to start; added `location = "registry-1.docker.io"` and normalized mirror hosts.
 - HAProxy backend used `hostvars[server]['ansible_facts']`, which rendered the first master's hostname/IP for every server (duplicate server names → haproxy refused to start, VIP:7443 dead); now uses the inventory hostname and `ansible_host`.
+- Templates take node name/IP from inventory (`inventory_hostname`, `ansible_host` with facts fallback) because `ansible_facts` leaked between hosts on multi-master runs (ansible-core 2.21, cf. ansible/ansible#87415) and `kubeadm init` on control-1 got control-3's name/IP.
+- `ha` role flushes handlers so HAProxy and Keepalived run the new config before `kubeadm init`.

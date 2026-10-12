@@ -7,12 +7,12 @@
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: {{ hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address }}
+  advertiseAddress: {{ hostvars[groups['k8s_masters'][0]].ansible_host | default(hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address) }}
   bindPort: 6443
 nodeRegistration:
   criSocket: {{ cri_socket }}
   imagePullPolicy: IfNotPresent
-  name: {{ ansible_facts.nodename }}
+  name: {{ inventory_hostname }}
 ---
 # ClusterConfiguration — общие параметры кластера
 apiVersion: kubeadm.k8s.io/v1beta3
@@ -26,7 +26,7 @@ kubernetesVersion: {{ kube_version }}
 controlPlaneEndpoint: {{ ha_cluster_virtual_ip }}:{{ ha_cluster_virtual_port }}
 {% else %}
 # Single-node — прямой доступ к API
-controlPlaneEndpoint: {{ hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address }}:6443
+controlPlaneEndpoint: {{ hostvars[groups['k8s_masters'][0]].ansible_host | default(hostvars[groups['k8s_masters'][0]].ansible_facts.default_ipv4.address) }}:6443
 {% endif %}
 networking:
   dnsDomain: {{ kube_domain_name }}

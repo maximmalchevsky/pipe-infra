@@ -49,3 +49,7 @@
   loop:
     - keepalived
     - haproxy
+
+- name: Применить конфигурацию HA до инициализации control plane
+  ansible.builtin.meta: flush_handlers
+
