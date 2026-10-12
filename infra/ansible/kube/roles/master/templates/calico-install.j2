@@ -8,6 +8,9 @@ kind: Installation
 metadata:
   name: default
 spec:
+{% if calico_registry | default('') %}
+  registry: {{ calico_registry }}
+{% endif %}
   # Настройка сети Calico
   calicoNetwork:
     # Внимание: ipPools нельзя изменить после установки

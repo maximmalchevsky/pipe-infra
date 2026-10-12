@@ -7,7 +7,7 @@ DOMAIN := hackathon.lan
 endif
 
 .DEFAULT_GOAL := help
-.PHONY: all help check deps tfvars infra cluster up plan status down lint hosts trust-ca argocd-password apps sealing-key seal load-campaign load-api load-clean watch demo-canary demo-rollback demo-fix rollout-status
+.PHONY: all help check deps tfvars infra cluster up wait plan status down lint hosts trust-ca argocd-password apps sealing-key seal load-campaign load-api load-clean watch demo-canary demo-rollback demo-fix rollout-status
 
 all: help
 
@@ -51,7 +51,7 @@ infra: tfvars ## Развернуть ВМ в Proxmox через Terraform (init
 cluster: ## Настроить Kubernetes кластер и ArgoCD через Ansible
 	ansible-playbook infra/ansible/site.yml
 
-up: check deps sealing-key infra cluster ## Развернуть стек целиком (Terraform + Ansible)
+up: check deps sealing-key infra cluster wait ## Развернуть стек целиком (Terraform + Ansible)
 	@echo ""
 	@echo "================================================================="
 	@echo "Кластер успешно развернут!"
@@ -60,9 +60,14 @@ up: check deps sealing-key infra cluster ## Развернуть стек цел
 	@echo "  export KUBECONFIG=\$$(pwd)/$(KUBECONFIG_LOCAL)"
 	@echo "  kubectl get nodes -o wide"
 	@echo ""
-	@echo "Доступ к веб-интерфейсу ArgoCD:"
-	@echo "  kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd port-forward svc/argocd-server 8080:80"
-	@echo "  URL: http://localhost:8080 (логин: admin)"
+	@echo "Веб-интерфейсы (Ingress):"
+	@echo "  ArgoCD:  https://argocd.$(DOMAIN) (логин: admin)"
+	@echo "  Grafana: https://grafana.$(DOMAIN)"
+	@echo "  API:     https://api.$(DOMAIN)"
+	@echo ""
+	@echo "Настройка доступа (выполнить один раз):"
+	@echo "  make hosts | sudo tee -a /etc/hosts"
+	@echo "  make trust-ca"
 	@echo ""
 	@echo "Получение пароля admin для ArgoCD:"
 	@echo "  kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo"
@@ -104,6 +109,27 @@ trust-ca: ## Экспортировать CA кластера и показат�
 
 argocd-password: ## Получить первоначальный пароль admin для ArgoCD
 	@kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+
+wait: ## Дождаться, пока все Application в ArgoCD станут Synced/Healthy (таймаут WAIT_TIMEOUT, по умолчанию 40 мин)
+	@WAIT_TIMEOUT=$${WAIT_TIMEOUT:-2400}; \
+	ELAPSED=0; \
+	echo "Ожидание готовности ArgoCD Applications (таймаут $${WAIT_TIMEOUT}с)..."; \
+	while [ $$ELAPSED -lt $$WAIT_TIMEOUT ]; do \
+		RAW=$$(kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get applications -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.sync.status}{" "}{.status.health.status}{"\n"}{end}' 2>/dev/null || true); \
+		SUMMARY=$$(printf "%s\n" "$$RAW" | awk 'NF>=1 { total++; if ($$2 == "Synced" && $$3 == "Healthy") ready++; else not_ready = not_ready " " $$1 "(" $$2 "/" $$3 ")"; } END { printf "%d %d%s", total+0, ready+0, not_ready }'); \
+		TOTAL=$$(echo "$$SUMMARY" | awk '{print $$1}'); \
+		READY=$$(echo "$$SUMMARY" | awk '{print $$2}'); \
+		NOT_READY=$$(echo "$$SUMMARY" | cut -d" " -f3-); \
+		if [ "$$TOTAL" -gt 0 ] && [ "$$READY" -eq "$$TOTAL" ]; then \
+			echo "healthy $$READY/$$TOTAL — все приложения Synced/Healthy!"; \
+			exit 0; \
+		fi; \
+		echo "healthy $$READY/$$TOTAL (не готовы: $${NOT_READY:-ожидание приложений})"; \
+		sleep 15; \
+		ELAPSED=$$((ELAPSED + 15)); \
+	done; \
+	echo "Таймаут ($${WAIT_TIMEOUT}с) ожидания ArgoCD Applications! Не готовы:$$NOT_READY" >&2; \
+	exit 1
 
 apps: ## Показать список Application в ArgoCD
 	kubectl --kubeconfig $(KUBECONFIG_LOCAL) -n argocd get applications

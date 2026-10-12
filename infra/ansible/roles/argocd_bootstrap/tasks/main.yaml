@@ -1,4 +1,11 @@
 ---
+- name: Wait for all nodes Ready
+  ansible.builtin.command:
+    cmd: kubectl wait --for=condition=Ready nodes --all --timeout=900s
+  environment:
+    KUBECONFIG: "{{ argocd_kubeconfig }}"
+  changed_when: false
+
 - name: Check installed helm version
   ansible.builtin.command:
     cmd: helm version --short

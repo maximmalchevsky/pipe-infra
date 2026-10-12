@@ -25,3 +25,4 @@ This directory contains code adapted from [BigKAA/00-kube-ansible](https://githu
 - Fixed directory modes across roles to ensure execute bits (`0755` for `/etc/containerd`, certs.d, CNI, and container registry directories; quoted `'0700'` for private directories).
 - Wrapped `prepare-hosts` hook inclusions in conditional blocks to prevent changed status on empty task lists.
 - Fixed worker play host pattern: `groups['k8s_masters'][0]` was not templated by Ansible → first master dropped from the play, join token never generated on clean installs; replaced with `k8s_masters[0]`, and removed `run_once` from `Prepare to Join`, since run_once picked a worker as the first play host and the `when` skipped it.
+- Added optional `registry` to Calico Installation template driven by `calico_registry` (defaulted to `quay.io/` in `group_vars/k8s_cluster`) because docker.io pulls stalled.

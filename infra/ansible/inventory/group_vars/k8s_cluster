@@ -126,6 +126,8 @@ cilium_version: "{{ cilium_version_matrix[kube_version | regex_replace('^(\\d+\\
 cilium_chart_version: "{{ cilium_version }}"
 
 # --- Calico параметры ---
+# Реестр образов Calico (quay.io, т.к. docker.io через зеркало зависает; пустая строка = дефолт оператора)
+calico_registry: "quay.io/"
 # One of: IPIP, VXLAN, IPIPCrossSubnet, VXLANCrossSubnet, None
 encapsulation: "IPIPCrossSubnet"
 # Для eBPF раскомментируйте:
