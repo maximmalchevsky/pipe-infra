@@ -73,6 +73,10 @@
                   hs.message = obj.status.health.message
                 end
               end
+              if hs.status == "Healthy" and obj.status.sync ~= nil and obj.status.sync.status ~= "Synced" then
+                hs.status = "Progressing"
+                hs.message = "waiting for sync: " .. tostring(obj.status.sync.status)
+              end
             end
             return hs
       server:

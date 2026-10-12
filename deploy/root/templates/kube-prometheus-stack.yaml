@@ -182,6 +182,9 @@ spec:
             limits:
               memory: 128Mi
         prometheusOperator:
+          admissionWebhooks:
+            certManager:
+              enabled: true
           resources:
             requests:
               cpu: 50m
