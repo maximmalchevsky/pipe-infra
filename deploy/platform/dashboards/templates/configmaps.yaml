@@ -1,0 +1,15 @@
+{{- range $path, $_ := .Files.Glob "files/*.json" }}
+{{- $basename := base $path }}
+{{- $name := trimSuffix ".json" $basename }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-{{ $name }}
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  {{ $basename }}: |
+{{ regexReplaceAll "\\$\\{DS_[A-Za-z0-9_-]+\\}" ($.Files.Get $path) "prometheus" | indent 4 }}
+---
+{{- end }}

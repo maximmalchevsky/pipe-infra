@@ -1,0 +1,40 @@
+# PodMonitors defined here because the CRD is installed by kube-prometheus-stack in wave 2,
+# while the target apps (keda, cert-manager, sealed-secrets) are deployed in earlier waves.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: keda-operator
+  namespace: keda
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keda-operator
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: cert-manager
+  podMetricsEndpoints:
+    - port: http-metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: sealed-secrets
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sealed-secrets
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
